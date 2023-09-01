@@ -1,14 +1,14 @@
 {
   "name": "renderer",
   "version": "1.0.0",
-  "description": "",
+  "description": "wgpu test",
   "private": "true",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "webpack",
+    "build": "./build.sh && webpack",
     "start": "webpack serve"
   },
-  "author": "",
+  "author": "Nick Petalas",
   "license": "ISC",
   "devDependencies": {
     "css-loader": "^6.8.1",

@@ -8,9 +8,6 @@
   padding: 2rem;
 }
 
-#canvas {
-  min-height: 384px;
+#wgpu {
   aspect-ratio: 1 / 1;
-  outline: 1px solid black;
-  margin-top: 1rem;
 }

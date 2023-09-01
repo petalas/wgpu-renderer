@@ -1,4 +1,8 @@
 import "./reset.css";
 import "./styles.css";
 
-console.log("hello");
+import { default as init } from "./assets/wasm/renderer";
+
+init().then(() => {
+  console.log("WASM Loaded");
+});
