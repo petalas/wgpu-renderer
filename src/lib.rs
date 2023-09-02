@@ -7,6 +7,7 @@ use wgpu::{Buffer, Device, SubmissionIndex};
 
 use crate::util::{draw_buffer, get_canvas_by_id, resize_canvas};
 mod util;
+mod model;
 
 async fn run() {
     let args: Vec<_> = env::args().collect();
@@ -26,8 +27,8 @@ async fn run() {
 
     let bytes = get_bytes(buffer).await;
 
-    let canvas = get_canvas_by_id("target");
-    resize_canvas(&canvas, 256, 256);
+    let canvas = get_canvas_by_id("wgpu-canvas");
+    // resize_canvas(&canvas, 256, 256);
     draw_buffer(&bytes, &canvas);
 }
 

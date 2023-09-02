@@ -1,5 +1,25 @@
-use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
+use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
+use web_sys::{CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData, console};
+
+use crate::model::drawing::Drawing;
+use rand::Rng;
+
+pub struct Timer<'a> {
+    name: &'a str,
+}
+
+impl<'a> Timer<'a> {
+    pub fn new(name: &'a str) -> Timer<'a> {
+        console::time_with_label(name);
+        Timer { name }
+    }
+}
+
+impl<'a> Drop for Timer<'a> {
+    fn drop(&mut self) {
+        console::time_end_with_label(self.name);
+    }
+}
 
 pub fn get_context(canvas: &HtmlCanvasElement) -> CanvasRenderingContext2d {
     let opts = js_sys::Object::new();
@@ -37,4 +57,24 @@ pub fn get_canvas_by_id(id: &str) -> HtmlCanvasElement {
 pub fn resize_canvas(canvas: &HtmlCanvasElement, w: u32, h: u32) {
     canvas.set_width(w);
     canvas.set_height(h);
+}
+
+#[wasm_bindgen()]
+pub fn draw(canvas: wasm_bindgen::JsValue, drawing_json: wasm_bindgen::JsValue) {
+    let canvas = canvas
+        .dyn_into::<HtmlCanvasElement>()
+        .expect("Not an HTML Canvas");
+
+    let ctx = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .unwrap();
+
+    Drawing::from(drawing_json).draw(&ctx, false);
+}
+
+pub fn randomf64_clamped(min: f64, max: f64) -> f64 {
+    return rand::thread_rng().gen_range(min..max);
 }
