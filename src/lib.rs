@@ -1,18 +1,22 @@
+use log::info;
 use std::env;
 use std::mem::size_of;
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::console::info;
 use wgpu::{Buffer, Device, SubmissionIndex};
 
+use crate::util::{draw_buffer, get_canvas_by_id, resize_canvas};
+mod util;
+
 async fn run() {
     let args: Vec<_> = env::args().collect();
     let (width, height) = match args.len() {
         // 0 on wasm, 1 on desktop
-        0 | 1 => (100usize, 200usize),
+        0 | 1 => (256usize, 256usize),
         3 => (args[1].parse().unwrap(), args[2].parse().unwrap()),
         _ => {
             println!("Incorrect number of arguments, possible usages:");
-            println!("*   0 arguments - uses default width and height of (100, 200)");
+            println!("*   0 arguments - uses default width and height of (256, 256)");
             println!("*   2 arguments - uses specified width and height values");
             return;
         }
@@ -21,6 +25,10 @@ async fn run() {
         create_red_image_with_dimensions(width, height).await;
 
     let bytes = get_bytes(buffer).await;
+
+    let canvas = get_canvas_by_id("target");
+    resize_canvas(&canvas, 256, 256);
+    draw_buffer(&bytes, &canvas);
 }
 
 async fn create_red_image_with_dimensions(
