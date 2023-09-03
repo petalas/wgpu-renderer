@@ -1,13 +1,13 @@
 use log::info;
-use std::env;
 use std::mem::size_of;
+use std::{borrow::Cow, env};
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::console::info;
-use wgpu::{Buffer, Device, SubmissionIndex};
+use wgpu::{Buffer, CommandEncoder, Device, RenderPass, SubmissionIndex};
 
 use crate::util::{draw_buffer, get_canvas_by_id, resize_canvas};
-mod util;
 mod model;
+mod util;
 
 async fn run() {
     let args: Vec<_> = env::args().collect();
@@ -90,22 +90,77 @@ async fn create_red_image_with_dimensions(
         view_formats: &[],
     });
 
-    // Set the background to be red
-    let command_buffer = {
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
+
+    // Load the shaders from disk
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+    });
+
+    let config = wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        width: width as u32,
+        height: height as u32,
+        present_mode: wgpu::PresentMode::Immediate,
+        alpha_mode: wgpu::CompositeAlphaMode::Auto,
+        view_formats: vec![],
+    };
+
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: config.format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
+
+    let command_buffer: wgpu::CommandBuffer = {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+
+        let view = &texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Set the background to be red
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                view: view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::RED),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                     store: true,
                 },
             })],
             depth_stencil_attachment: None,
         });
+
+        rpass.set_pipeline(&render_pipeline);
+        rpass.draw(0..3, 0..1);
+
+        // encoder methods like begin_render_pass and copy_texture_to_buffer take a &'pass mut self
+        // drop rpass before copy_texture_to_buffer to avoid: cannot borrow `encoder` as mutable more than once at a time
+        drop(rpass);
 
         // Copy the data from the texture to the buffer
         encoder.copy_texture_to_buffer(
