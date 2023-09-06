@@ -1,9 +1,12 @@
 import test from "./assets/test.json";
-import { draw, default as init } from "./assets/wasm/renderer";
+// import test from "./assets/simple.json";
+import { draw, draw_gpu, default as init } from "./assets/wasm/renderer";
 import "./reset.css";
 import "./styles.css";
 
 init().then(() => {
   console.log("WASM Loaded");
-  draw(document.getElementById("ref-canvas"), JSON.stringify(test));
+  const drawing = JSON.stringify(test);
+  draw(document.getElementById("ref-canvas"), drawing);
+  draw_gpu(drawing);
 });

@@ -1,7 +1,7 @@
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
-use web_sys::{CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData, console};
+use web_sys::{console, CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
 
-use crate::model::drawing::Drawing;
+use crate::{model::drawing::Drawing, run};
 use rand::Rng;
 
 pub struct Timer<'a> {
@@ -72,9 +72,25 @@ pub fn draw(canvas: wasm_bindgen::JsValue, drawing_json: wasm_bindgen::JsValue) 
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap();
 
-    Drawing::from(drawing_json).draw(&ctx, false);
+    let data = Drawing::from(drawing_json).draw(&ctx, true).unwrap();
+    log::info!("canvas bytes: {:?}", data.len());
+}
+
+#[wasm_bindgen()]
+pub fn draw_gpu(drawing_json: wasm_bindgen::JsValue) {
+    let drawing = Drawing::from(drawing_json);
+    wasm_bindgen_futures::spawn_local(run(drawing));
 }
 
 pub fn randomf64_clamped(min: f64, max: f64) -> f64 {
     return rand::thread_rng().gen_range(min..max);
+}
+
+pub fn randomf32_clamped(min: f32, max: f32) -> f32 {
+    return rand::thread_rng().gen_range(min..max);
+}
+
+pub fn toArray<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into()
+        .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
 }

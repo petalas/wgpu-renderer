@@ -213,17 +213,24 @@ function __wbg_adapter_29(arg0, arg1, arg2) {
 }
 
 /**
-*/
-export function main() {
-    wasm.main();
-}
-
-/**
 * @param {any} canvas
 * @param {any} drawing_json
 */
 export function draw(canvas, drawing_json) {
     wasm.draw(addHeapObject(canvas), addHeapObject(drawing_json));
+}
+
+/**
+* @param {any} drawing_json
+*/
+export function draw_gpu(drawing_json) {
+    wasm.draw_gpu(addHeapObject(drawing_json));
+}
+
+/**
+*/
+export function main() {
+    wasm.main();
 }
 
 function handleError(f, args) {
@@ -1042,16 +1049,16 @@ function __wbg_get_imports() {
         const ret = wasm.memory;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper626 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 286, __wbg_adapter_24);
+    imports.wbg.__wbindgen_closure_wrapper640 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 294, __wbg_adapter_24);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper628 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 286, __wbg_adapter_24);
+    imports.wbg.__wbindgen_closure_wrapper642 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 294, __wbg_adapter_24);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper638 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 291, __wbg_adapter_29);
+    imports.wbg.__wbindgen_closure_wrapper652 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 299, __wbg_adapter_29);
         return addHeapObject(ret);
     };
 

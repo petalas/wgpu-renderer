@@ -9,6 +9,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+bytemuck = { version = "1.14.0", features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 futures-intrusive = "0.5.0"

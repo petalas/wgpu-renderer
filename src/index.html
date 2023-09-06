@@ -7,10 +7,16 @@
   </head>
   <body>
     <div class="wrapper">
-      <h2 id="header">wgpu test</h2>
+      <h2 id="header">JS Canvas vs WEBGPU rendering test.</h2>
       <div class="row">
-        <canvas width="256" height="256" id="ref-canvas"></canvas>
-        <canvas width="256" height="256" id="wgpu-canvas"></canvas>
+        <div class="canvas-wrapper">
+          <label for="ref-canvas" class="label">CANVAS</label>
+          <canvas width="256" height="256" id="ref-canvas"></canvas>
+        </div>
+        <div class="canvas-wrapper">
+          <label for="wgpu-canvas" class="label">WEBGPU</label>
+          <canvas width="256" height="256" id="wgpu-canvas"></canvas>
+        </div>
       </div>
     </div>
   </body>

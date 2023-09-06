@@ -3,6 +3,11 @@
 *::before,
 *::after {
   box-sizing: border-box;
+
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1;
+  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif
 }
 
 /* Remove default margin */

@@ -1,15 +1,26 @@
+use js_sys::Float32Array;
 use log::info;
-use std::mem::size_of;
+use model::drawing::Drawing;
+use model::polygon::Polygon;
+use std::mem::{self, size_of};
 use std::{borrow::Cow, env};
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::console::info;
+use wgpu::util::DeviceExt;
 use wgpu::{Buffer, CommandEncoder, Device, RenderPass, SubmissionIndex};
 
-use crate::util::{draw_buffer, get_canvas_by_id, resize_canvas};
+use crate::util::{draw_buffer, get_canvas_by_id, resize_canvas, toArray};
 mod model;
 mod util;
 
-async fn run() {
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 4],
+    color: [f32; 4],
+}
+
+async fn run(drawing: Drawing) {
     let args: Vec<_> = env::args().collect();
     let (width, height) = match args.len() {
         // 0 on wasm, 1 on desktop
@@ -23,9 +34,10 @@ async fn run() {
         }
     };
     let (device, buffer, buffer_dimensions, submission_index) =
-        create_red_image_with_dimensions(width, height).await;
+        create_red_image_with_dimensions(width, height, drawing).await;
 
     let bytes = get_bytes(buffer).await;
+    log::info!("webgpu bytes: {:?}", bytes.len());
 
     let canvas = get_canvas_by_id("wgpu-canvas");
     // resize_canvas(&canvas, 256, 256);
@@ -35,6 +47,7 @@ async fn run() {
 async fn create_red_image_with_dimensions(
     width: usize,
     height: usize,
+    drawing: Drawing,
 ) -> (Device, Buffer, BufferDimensions, SubmissionIndex) {
     let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -112,13 +125,33 @@ async fn create_red_image_with_dimensions(
         view_formats: vec![],
     };
 
+    let vertex_buffer_layout = wgpu::VertexBufferLayout {
+        array_stride: (mem::size_of::<f32>() * 8) as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &[
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 0,
+                shader_location: 0,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 16,
+                shader_location: 1,
+            },
+        ],
+    };
+
+    let mut primitive = wgpu::PrimitiveState::default();
+    primitive.cull_mode = None;
+
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: "vs_main",
-            buffers: &[],
+            buffers: &[vertex_buffer_layout],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
@@ -129,10 +162,21 @@ async fn create_red_image_with_dimensions(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: wgpu::PrimitiveState::default(),
+        primitive: primitive,
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
+    });
+
+    let vertices: Vec<Vertex> = drawing.to_vertices();
+
+    log::info!("{:?}", vertices);
+
+    // create buffer, write buffer (bytemuck?)
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX,
     });
 
     let command_buffer: wgpu::CommandBuffer = {
@@ -156,7 +200,8 @@ async fn create_red_image_with_dimensions(
         });
 
         rpass.set_pipeline(&render_pipeline);
-        rpass.draw(0..3, 0..1);
+        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        rpass.draw(0..vertices.len() as u32, 0..vertices.len() as u32);
 
         // encoder methods like begin_render_pass and copy_texture_to_buffer take a &'pass mut self
         // drop rpass before copy_texture_to_buffer to avoid: cannot borrow `encoder` as mutable more than once at a time
@@ -225,5 +270,4 @@ impl BufferDimensions {
 pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Debug).expect("could not initialize logger");
-    wasm_bindgen_futures::spawn_local(run());
 }

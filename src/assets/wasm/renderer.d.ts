@@ -1,20 +1,25 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
-*/
-export function main(): void;
-/**
 * @param {any} canvas
 * @param {any} drawing_json
 */
 export function draw(canvas: any, drawing_json: any): void;
+/**
+* @param {any} drawing_json
+*/
+export function draw_gpu(drawing_json: any): void;
+/**
+*/
+export function main(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly main: () => void;
   readonly draw: (a: number, b: number) => void;
+  readonly draw_gpu: (a: number) => void;
+  readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
