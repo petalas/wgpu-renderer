@@ -7,8 +7,13 @@
   </head>
   <body>
     <div class="wrapper">
-      <h2 id="header">JS Canvas vs WEBGPU rendering test.</h2>
+      <h2 id="header">Canvas vs WEBGPU rendering test.</h2>
+      <p class="stats"></p>
       <div class="row">
+        <div class="canvas-wrapper">
+          <label for="source-img" class="label">SOURCE</label>
+          <img width="256" height="256" id="source-img"></img>
+        </div>
         <div class="canvas-wrapper">
           <label for="ref-canvas" class="label">CANVAS</label>
           <canvas width="256" height="256" id="ref-canvas"></canvas>

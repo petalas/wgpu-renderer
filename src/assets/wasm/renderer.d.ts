@@ -3,12 +3,16 @@
 /**
 * @param {any} canvas
 * @param {any} drawing_json
+* @param {number} width
+* @param {number} height
 */
-export function draw(canvas: any, drawing_json: any): void;
+export function draw(canvas: any, drawing_json: any, width: number, height: number): void;
 /**
 * @param {any} drawing_json
+* @param {number} width
+* @param {number} height
 */
-export function draw_gpu(drawing_json: any): void;
+export function draw_gpu(drawing_json: any, width: number, height: number): void;
 /**
 */
 export function main(): void;
@@ -17,8 +21,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly draw: (a: number, b: number) => void;
-  readonly draw_gpu: (a: number) => void;
+  readonly draw: (a: number, b: number, c: number, d: number) => void;
+  readonly draw_gpu: (a: number, b: number, c: number) => void;
   readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

@@ -1,7 +1,9 @@
+use std::mem::size_of;
+
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
 use web_sys::{console, CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
 
-use crate::{model::drawing::Drawing, run};
+use crate::{model::drawing::Drawing, Engine};
 use rand::Rng;
 
 pub struct Timer<'a> {
@@ -60,10 +62,17 @@ pub fn resize_canvas(canvas: &HtmlCanvasElement, w: u32, h: u32) {
 }
 
 #[wasm_bindgen()]
-pub fn draw(canvas: wasm_bindgen::JsValue, drawing_json: wasm_bindgen::JsValue) {
+pub fn draw(
+    canvas: wasm_bindgen::JsValue,
+    drawing_json: wasm_bindgen::JsValue,
+    width: usize,
+    height: usize,
+) {
     let canvas = canvas
         .dyn_into::<HtmlCanvasElement>()
         .expect("Not an HTML Canvas");
+
+    resize_canvas(&canvas, width as u32, height as u32);
 
     let ctx = canvas
         .get_context("2d")
@@ -77,9 +86,21 @@ pub fn draw(canvas: wasm_bindgen::JsValue, drawing_json: wasm_bindgen::JsValue) 
 }
 
 #[wasm_bindgen()]
-pub fn draw_gpu(drawing_json: wasm_bindgen::JsValue) {
+pub fn draw_gpu(drawing_json: wasm_bindgen::JsValue, width: usize, height: usize) {
     let drawing = Drawing::from(drawing_json);
-    wasm_bindgen_futures::spawn_local(run(drawing));
+    wasm_bindgen_futures::spawn_local(draw_gpu_internal(drawing, width, height));
+}
+
+async fn draw_gpu_internal(drawing: Drawing, width: usize, height: usize) {
+    // draw on GPU and read output_buffer
+    let engine = Engine::new(width, height).await;
+    engine.draw(drawing).await;
+    let bytes = get_bytes(engine.output_buffer).await;
+
+    // draw to HtmlCanvasElement
+    let canvas = get_canvas_by_id("wgpu-canvas");
+    resize_canvas(&canvas, width as u32, height as u32);
+    draw_buffer(&bytes, &canvas);
 }
 
 pub fn randomf64_clamped(min: f64, max: f64) -> f64 {
@@ -93,4 +114,42 @@ pub fn randomf32_clamped(min: f32, max: f32) -> f32 {
 pub fn toArray<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
         .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+}
+
+pub async fn get_bytes(output_buffer: wgpu::Buffer) -> Vec<u8> {
+    // Note that we're not calling `.await` here.
+    let buffer_slice = output_buffer.slice(..);
+    // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
+    let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
+    if let Some(Ok(())) = receiver.receive().await {
+        let padded_buffer = buffer_slice.get_mapped_range();
+        return padded_buffer.to_vec();
+    } else {
+        return vec![];
+    }
+}
+
+pub struct BufferDimensions {
+    pub width: usize,
+    pub height: usize,
+    pub unpadded_bytes_per_row: usize,
+    pub padded_bytes_per_row: usize,
+}
+
+impl BufferDimensions {
+    pub fn new(width: usize, height: usize) -> Self {
+        let bytes_per_pixel = size_of::<u32>();
+        let unpadded_bytes_per_row = width * bytes_per_pixel;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
+        let padded_bytes_per_row_padding = (align - unpadded_bytes_per_row % align) % align;
+        let padded_bytes_per_row = unpadded_bytes_per_row + padded_bytes_per_row_padding;
+        Self {
+            width,
+            height,
+            unpadded_bytes_per_row,
+            padded_bytes_per_row,
+        }
+    }
 }

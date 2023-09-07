@@ -215,16 +215,20 @@ function __wbg_adapter_29(arg0, arg1, arg2) {
 /**
 * @param {any} canvas
 * @param {any} drawing_json
+* @param {number} width
+* @param {number} height
 */
-export function draw(canvas, drawing_json) {
-    wasm.draw(addHeapObject(canvas), addHeapObject(drawing_json));
+export function draw(canvas, drawing_json, width, height) {
+    wasm.draw(addHeapObject(canvas), addHeapObject(drawing_json), width, height);
 }
 
 /**
 * @param {any} drawing_json
+* @param {number} width
+* @param {number} height
 */
-export function draw_gpu(drawing_json) {
-    wasm.draw_gpu(addHeapObject(drawing_json));
+export function draw_gpu(drawing_json, width, height) {
+    wasm.draw_gpu(addHeapObject(drawing_json), width, height);
 }
 
 /**
@@ -1049,16 +1053,16 @@ function __wbg_get_imports() {
         const ret = wasm.memory;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper640 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 294, __wbg_adapter_24);
+    imports.wbg.__wbindgen_closure_wrapper631 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 286, __wbg_adapter_24);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper642 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 294, __wbg_adapter_24);
+    imports.wbg.__wbindgen_closure_wrapper633 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 286, __wbg_adapter_24);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper652 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 299, __wbg_adapter_29);
+    imports.wbg.__wbindgen_closure_wrapper643 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 291, __wbg_adapter_29);
         return addHeapObject(ret);
     };
 

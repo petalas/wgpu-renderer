@@ -1,15 +1,10 @@
-use js_sys::Float32Array;
-use log::info;
 use model::drawing::Drawing;
-use model::polygon::Polygon;
-use std::mem::{self, size_of};
-use std::{borrow::Cow, env};
+use std::borrow::Cow;
+use std::mem::{self};
+use util::BufferDimensions;
 use wasm_bindgen::prelude::wasm_bindgen;
-use web_sys::console::info;
 use wgpu::util::DeviceExt;
-use wgpu::{Buffer, CommandEncoder, Device, RenderPass, SubmissionIndex};
-
-use crate::util::{draw_buffer, get_canvas_by_id, resize_canvas, toArray};
+use wgpu::Device;
 mod model;
 mod util;
 
@@ -20,249 +15,201 @@ struct Vertex {
     color: [f32; 4],
 }
 
-async fn run(drawing: Drawing) {
-    let args: Vec<_> = env::args().collect();
-    let (width, height) = match args.len() {
-        // 0 on wasm, 1 on desktop
-        0 | 1 => (256usize, 256usize),
-        3 => (args[1].parse().unwrap(), args[2].parse().unwrap()),
-        _ => {
-            println!("Incorrect number of arguments, possible usages:");
-            println!("*   0 arguments - uses default width and height of (256, 256)");
-            println!("*   2 arguments - uses specified width and height values");
-            return;
-        }
-    };
-    let (device, buffer, buffer_dimensions, submission_index) =
-        create_red_image_with_dimensions(width, height, drawing).await;
-
-    let bytes = get_bytes(buffer).await;
-    log::info!("webgpu bytes: {:?}", bytes.len());
-
-    let canvas = get_canvas_by_id("wgpu-canvas");
-    // resize_canvas(&canvas, 256, 256);
-    draw_buffer(&bytes, &canvas);
+struct Engine {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    buffer_dimensions: BufferDimensions,
+    output_buffer: wgpu::Buffer,
+    texture_extent: wgpu::Extent3d,
+    texture: wgpu::Texture,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
-async fn create_red_image_with_dimensions(
-    width: usize,
-    height: usize,
-    drawing: Drawing,
-) -> (Device, Buffer, BufferDimensions, SubmissionIndex) {
-    let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends,
-        dx12_shader_compiler: wgpu::Dx12Compiler::default(),
-    });
+impl Engine {
+    pub async fn new(width: usize, height: usize) -> Self {
+        let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            dx12_shader_compiler: wgpu::Dx12Compiler::default(),
+        });
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .unwrap();
 
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .await
-        .unwrap();
-
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                features: wgpu::Features::empty(),
-                limits: wgpu::Limits::downlevel_defaults(),
-            },
-            None,
-        )
-        .await
-        .unwrap();
-
-    // It is a WebGPU requirement that ImageCopyBuffer.layout.bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0
-    // So we calculate padded_bytes_per_row by rounding unpadded_bytes_per_row
-    // up to the next multiple of wgpu::COPY_BYTES_PER_ROW_ALIGNMENT.
-    // https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding
-    let buffer_dimensions = BufferDimensions::new(width, height);
-    // The output buffer lets us retrieve the data as an array
-    let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (buffer_dimensions.padded_bytes_per_row * buffer_dimensions.height) as u64,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let texture_extent = wgpu::Extent3d {
-        width: buffer_dimensions.width as u32,
-        height: buffer_dimensions.height as u32,
-        depth_or_array_layers: 1,
-    };
-
-    // The render pipeline renders data into this texture
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        size: texture_extent,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        label: None,
-        view_formats: &[],
-    });
-
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
-
-    // Load the shaders from disk
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-    });
-
-    let config = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        width: width as u32,
-        height: height as u32,
-        present_mode: wgpu::PresentMode::Immediate,
-        alpha_mode: wgpu::CompositeAlphaMode::Auto,
-        view_formats: vec![],
-    };
-
-    let vertex_buffer_layout = wgpu::VertexBufferLayout {
-        array_stride: (mem::size_of::<f32>() * 8) as u64,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &[
-            wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x4,
-                offset: 0,
-                shader_location: 0,
-            },
-            wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x4,
-                offset: 16,
-                shader_location: 1,
-            },
-        ],
-    };
-
-    let mut primitive = wgpu::PrimitiveState::default();
-    primitive.cull_mode = None;
-
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: "vs_main",
-            buffers: &[vertex_buffer_layout],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: config.format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: primitive,
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-    });
-
-    let vertices: Vec<Vertex> = drawing.to_vertices();
-
-    log::info!("{:?}", vertices);
-
-    // create buffer, write buffer (bytemuck?)
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Vertex Buffer"),
-        contents: bytemuck::cast_slice(&vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-
-    let command_buffer: wgpu::CommandBuffer = {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        let view = &texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Set the background to be red
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                    store: true,
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    features: wgpu::Features::empty(),
+                    limits: wgpu::Limits::default(),
                 },
-            })],
-            depth_stencil_attachment: None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // It is a WebGPU requirement that ImageCopyBuffer.layout.bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0
+        // So we calculate padded_bytes_per_row by rounding unpadded_bytes_per_row
+        // up to the next multiple of wgpu::COPY_BYTES_PER_ROW_ALIGNMENT.
+        // https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding
+        let buffer_dimensions = BufferDimensions::new(width, height);
+        // The output buffer lets us retrieve the data as an array
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (buffer_dimensions.padded_bytes_per_row * buffer_dimensions.height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
-        rpass.set_pipeline(&render_pipeline);
-        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        rpass.draw(0..vertices.len() as u32, 0..vertices.len() as u32);
+        let texture_extent = wgpu::Extent3d {
+            width: buffer_dimensions.width as u32,
+            height: buffer_dimensions.height as u32,
+            depth_or_array_layers: 1,
+        };
 
-        // encoder methods like begin_render_pass and copy_texture_to_buffer take a &'pass mut self
-        // drop rpass before copy_texture_to_buffer to avoid: cannot borrow `encoder` as mutable more than once at a time
-        drop(rpass);
+        let texture_format = wgpu::TextureFormat::Rgba8Unorm;
 
-        // Copy the data from the texture to the buffer
-        encoder.copy_texture_to_buffer(
-            texture.as_image_copy(),
-            wgpu::ImageCopyBuffer {
-                buffer: &output_buffer,
-                layout: wgpu::ImageDataLayout {
+        // The render pipeline renders data into this texture
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: texture_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            label: None,
+            view_formats: &[],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+
+        // Load the shaders from disk
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        });
+
+        let vertex_buffer_layout = wgpu::VertexBufferLayout {
+            array_stride: (mem::size_of::<f32>() * 8) as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
                     offset: 0,
-                    bytes_per_row: Some(buffer_dimensions.padded_bytes_per_row as u32),
-                    rows_per_image: None,
+                    shader_location: 0,
                 },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 16,
+                    shader_location: 1,
+                },
+            ],
+        };
+
+        let mut primitive = wgpu::PrimitiveState::default();
+        primitive.cull_mode = None;
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[vertex_buffer_layout],
             },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: texture_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: primitive,
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        Engine {
+            device,
+            queue,
+            buffer_dimensions,
+            output_buffer,
             texture_extent,
+            texture,
+            render_pipeline,
+        }
+    }
+
+    pub async fn draw(&self, drawing: Drawing) -> wgpu::SubmissionIndex {
+        let vertices: Vec<Vertex> = drawing.to_vertices();
+
+        // create buffer, write buffer (bytemuck?)
+        let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            &self.device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            },
         );
 
-        encoder.finish()
-    };
+        let command_buffer: wgpu::CommandBuffer = {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-    let index = queue.submit(Some(command_buffer));
-    (device, output_buffer, buffer_dimensions, index)
-}
+            let view = &self
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
 
-async fn get_bytes(output_buffer: Buffer) -> Vec<u8> {
-    // Note that we're not calling `.await` here.
-    let buffer_slice = output_buffer.slice(..);
-    // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
-    let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+            // Set the background to be red
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
 
-    if let Some(Ok(())) = receiver.receive().await {
-        let padded_buffer = buffer_slice.get_mapped_range();
-        return padded_buffer.to_vec();
-    } else {
-        return vec![];
-    }
-}
+            rpass.set_pipeline(&self.render_pipeline);
+            rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            rpass.draw(0..vertices.len() as u32, 0..vertices.len() as u32);
 
-struct BufferDimensions {
-    width: usize,
-    height: usize,
-    unpadded_bytes_per_row: usize,
-    padded_bytes_per_row: usize,
-}
+            // encoder methods like begin_render_pass and copy_texture_to_buffer take a &'pass mut self
+            // drop rpass before copy_texture_to_buffer to avoid: cannot borrow `encoder` as mutable more than once at a time
+            drop(rpass);
 
-impl BufferDimensions {
-    fn new(width: usize, height: usize) -> Self {
-        let bytes_per_pixel = size_of::<u32>();
-        let unpadded_bytes_per_row = width * bytes_per_pixel;
-        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
-        let padded_bytes_per_row_padding = (align - unpadded_bytes_per_row % align) % align;
-        let padded_bytes_per_row = unpadded_bytes_per_row + padded_bytes_per_row_padding;
-        Self {
-            width,
-            height,
-            unpadded_bytes_per_row,
-            padded_bytes_per_row,
-        }
+            // Copy the data from the texture to the buffer
+            encoder.copy_texture_to_buffer(
+                self.texture.as_image_copy(),
+                wgpu::ImageCopyBuffer {
+                    buffer: &self.output_buffer,
+                    layout: wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(self.buffer_dimensions.padded_bytes_per_row as u32),
+                        rows_per_image: None,
+                    },
+                },
+                self.texture_extent,
+            );
+
+            encoder.finish()
+        };
+
+        self.queue.submit(Some(command_buffer))
     }
 }
 

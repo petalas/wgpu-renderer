@@ -47,8 +47,13 @@ h2 {
   margin-bottom: 1rem;
 }
 
-.row canvas {
+.row canvas, .row img {
   width: 256px;
   height: 256px;
-  outline: 1px solid black;
+  /* outline: 1px solid black; */
+}
+
+.stats {
+  margin: 1rem;
+  text-align: center;
 }

@@ -12,5 +12,5 @@
     "allowSyntheticDefaultImports": true
   },
 
-  "exclude": ["target"]
+  "exclude": ["target", "node_modules", ".vscode"],
 }
