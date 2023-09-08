@@ -1,11 +1,12 @@
 use model::drawing::Drawing;
 use std::borrow::Cow;
 use std::mem::{self};
+use texture::Texture;
 use util::BufferDimensions;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wgpu::util::DeviceExt;
-use wgpu::Device;
+use wgpu::{BlendState, vertex_attr_array};
 mod model;
+mod texture;
 mod util;
 
 #[repr(C)]
@@ -19,14 +20,19 @@ struct Engine {
     device: wgpu::Device,
     queue: wgpu::Queue,
     buffer_dimensions: BufferDimensions,
-    output_buffer: wgpu::Buffer,
+    drawing_output_buffer: wgpu::Buffer,
     texture_extent: wgpu::Extent3d,
-    texture: wgpu::Texture,
+    texture_format: wgpu::TextureFormat,
+    drawing_texture: wgpu::Texture,
     render_pipeline: wgpu::RenderPipeline,
+    compute_bind_group: wgpu::BindGroup,
+    compute_pipeline: wgpu::ComputePipeline,
+    error_output_buffer: wgpu::Buffer,
+    error_output_texture: wgpu::Texture,
 }
 
 impl Engine {
-    pub async fn new(width: usize, height: usize) -> Self {
+    pub async fn new(source_bytes: &Vec<u8>, width: usize, height: usize) -> Self {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
@@ -42,7 +48,7 @@ impl Engine {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
+                    limits: wgpu::Limits::downlevel_defaults(),
                 },
                 None,
             )
@@ -55,9 +61,16 @@ impl Engine {
         // https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding
         let buffer_dimensions = BufferDimensions::new(width, height);
         // The output buffer lets us retrieve the data as an array
-        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let drawing_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: (buffer_dimensions.padded_bytes_per_row * buffer_dimensions.height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let error_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (buffer_dimensions.padded_bytes_per_row * buffer_dimensions.height) as u64 * 4,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -71,22 +84,113 @@ impl Engine {
         let texture_format = wgpu::TextureFormat::Rgba8Unorm;
 
         // The render pipeline renders data into this texture
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let drawing_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: texture_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             label: None,
             view_formats: &[],
         });
+        let view = drawing_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[],
-            push_constant_ranges: &[],
+        let compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0, // 'source' bytes loaded from target image
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1, // 'current' render target for drawing
+                        visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2, // 'error' output <-- error=abs(source - current) in RGBA32Float
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::Rgba32Float,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("compute_bind_group_layout"),
+            });
+
+        // doubt this makes much sense, attempting to pass in the dimensions as a 1x2 R32Uint texture
+        let dimensions = (width as u32, height as u32);
+        // let dimensions_texture = Texture::from_dimensions(&device, &queue, dimensions).unwrap();
+
+        let source_texture = Texture::from_bytes(
+            &device,
+            &queue,
+            &source_bytes.as_slice(),
+            dimensions,
+            &"source",
+        )
+        .unwrap();
+
+        let error_output_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("error_output_texture"),
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
         });
+        let error_texture_view =
+            error_output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    // source image texture WxH Rgba8Unorm
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&source_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    // render target texture WxH Rgba8Unorm
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    // error calc output texture WxH Rgba8Unorm
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&error_texture_view),
+                },
+            ],
+            label: Some("compute_bind_group"),
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
 
         // Load the shaders from disk
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -97,26 +201,28 @@ impl Engine {
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
             array_stride: (mem::size_of::<f32>() * 8) as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x4,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x4,
-                    offset: 16,
-                    shader_location: 1,
-                },
-            ],
+            attributes: &vertex_attr_array![0 => Float32x4, 1 => Float32x4]
         };
 
         let mut primitive = wgpu::PrimitiveState::default();
         primitive.cull_mode = None;
 
+        let blend_state: BlendState = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Max,
+            },
+        };
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
-            layout: Some(&pipeline_layout),
+            layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
@@ -127,7 +233,7 @@ impl Engine {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(blend_state),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -137,14 +243,38 @@ impl Engine {
             multiview: None,
         });
 
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("compute_pipeline_layout"),
+                bind_group_layouts: &[&compute_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let compute_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("error.compute.wgsl"))),
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_module,
+            entry_point: "main",
+        });
+
         Engine {
             device,
             queue,
             buffer_dimensions,
-            output_buffer,
+            drawing_output_buffer,
             texture_extent,
-            texture,
+            texture_format,
+            drawing_texture,
             render_pipeline,
+            compute_bind_group,
+            compute_pipeline,
+            error_output_buffer,
+            error_output_texture,
         }
     }
 
@@ -167,7 +297,7 @@ impl Engine {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
             let view = &self
-                .texture
+                .drawing_texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
             // Set the background to be red
@@ -185,6 +315,7 @@ impl Engine {
             });
 
             rpass.set_pipeline(&self.render_pipeline);
+            // rpass.set_bind_group(0, &self.bind_group, &[]);
             rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
             rpass.draw(0..vertices.len() as u32, 0..vertices.len() as u32);
 
@@ -194,9 +325,9 @@ impl Engine {
 
             // Copy the data from the texture to the buffer
             encoder.copy_texture_to_buffer(
-                self.texture.as_image_copy(),
+                self.drawing_texture.as_image_copy(),
                 wgpu::ImageCopyBuffer {
-                    buffer: &self.output_buffer,
+                    buffer: &self.drawing_output_buffer,
                     layout: wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(self.buffer_dimensions.padded_bytes_per_row as u32),
@@ -210,6 +341,41 @@ impl Engine {
         };
 
         self.queue.submit(Some(command_buffer))
+    }
+
+    pub async fn calculate_error(&self, width: u32, height: u32) -> wgpu::SubmissionIndex {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("calculate_error_command_encoder"),
+            });
+
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Compute Pass"),
+        });
+        cpass.set_pipeline(&self.compute_pipeline);
+        cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+        cpass.dispatch_workgroups(width / 8, height / 8, 1); // compute shader workgroup_size is (8, 8, 1)
+        drop(cpass);
+
+        let bytes_per_row = self.buffer_dimensions.padded_bytes_per_row as u32 * 4;
+        log::info!("bytes_per_row: {}", bytes_per_row);
+
+        // Copy the data from the texture to the buffer
+        encoder.copy_texture_to_buffer(
+            self.error_output_texture.as_image_copy(),
+            wgpu::ImageCopyBuffer {
+                buffer: &self.error_output_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            self.texture_extent,
+        );
+
+        self.queue.submit(Some(encoder.finish()))
     }
 }
 

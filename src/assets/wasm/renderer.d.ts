@@ -11,8 +11,9 @@ export function draw(canvas: any, drawing_json: any, width: number, height: numb
 * @param {any} drawing_json
 * @param {number} width
 * @param {number} height
+* @param {Uint8Array} source_bytes
 */
-export function draw_gpu(drawing_json: any, width: number, height: number): void;
+export function draw_gpu(drawing_json: any, width: number, height: number, source_bytes: Uint8Array): void;
 /**
 */
 export function main(): void;
@@ -22,13 +23,13 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly draw: (a: number, b: number, c: number, d: number) => void;
-  readonly draw_gpu: (a: number, b: number, c: number) => void;
+  readonly draw_gpu: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h42814e3f298eb064: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h565bb654821d28ca: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha2ed310a2790a573: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1e2170f7e2ff2838: (a: number, b: number, c: number) => void;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_exn_store: (a: number) => void;
   readonly __wbindgen_start: () => void;

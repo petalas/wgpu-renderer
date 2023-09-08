@@ -1,3 +1,4 @@
+use log::info;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
@@ -37,11 +38,17 @@ impl Drawing {
         for polygon in &self.polygons {
             /* Draw the starting vertex */
             ctx.begin_path();
-            ctx.move_to(polygon.points[0].x as f64 * w, polygon.points[0].y as f64 * h);
+            ctx.move_to(
+                polygon.points[0].x as f64 * w,
+                polygon.points[0].y as f64 * h,
+            );
 
             /* Create the rest of the vertices sequentially */
             for i in 0..polygon.points.len() {
-                ctx.line_to(polygon.points[i].x as f64 * w, polygon.points[i].y as f64  * h);
+                ctx.line_to(
+                    polygon.points[i].x as f64 * w,
+                    polygon.points[i].y as f64 * h,
+                );
             }
             ctx.close_path();
 
@@ -149,12 +156,17 @@ impl Drawing {
                     .points
                     .into_iter()
                     .map(|p| Vertex {
-                        position: [scale(p.x), scale(1.0 - p.y), 0.0f32, 1.0f32],
+                        position: [
+                            translate_coord(p.x),
+                            translate_coord(1.0 - p.y),
+                            0.0f32,
+                            1.0f32,
+                        ],
                         color: [
-                            pp.color.r as f32 / 255.0,
-                            pp.color.g as f32 / 255.0,
-                            pp.color.b as f32 / 255.0,
-                            pp.color.a as f32 / 255.0,
+                            translate_color(pp.color.r),
+                            translate_color(pp.color.g),
+                            translate_color(pp.color.b),
+                            translate_color(pp.color.a),
                         ],
                     })
                     .collect();
@@ -178,6 +190,10 @@ impl From<String> for Drawing {
     }
 }
 
-fn scale(number: f32) -> f32 {
+fn translate_coord(number: f32) -> f32 {
     return number * 2.0 - 1.0;
+}
+
+fn translate_color(color: u8) -> f32 {
+    color as f32 / 255.0
 }

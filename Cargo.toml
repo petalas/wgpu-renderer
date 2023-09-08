@@ -9,11 +9,13 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+anyhow = "1.0.75"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 futures-intrusive = "0.5.0"
 getrandom = { version = "0.2.10", features = ["js"] }
+image = "0.24.7"
 js-sys = "0.3.64"
 log = "0.4.20"
 rand = "0.8.5"

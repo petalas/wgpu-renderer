@@ -1,9 +1,12 @@
 use std::mem::size_of;
 
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
-use web_sys::{console, CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
+use web_sys::{
+    console::{self, info},
+    CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData,
+};
 
-use crate::{model::drawing::Drawing, Engine};
+use crate::{model::{drawing::Drawing, settings::MAX_ERROR_PER_PIXEL}, texture::Texture, Engine};
 use rand::Rng;
 
 pub struct Timer<'a> {
@@ -86,21 +89,97 @@ pub fn draw(
 }
 
 #[wasm_bindgen()]
-pub fn draw_gpu(drawing_json: wasm_bindgen::JsValue, width: usize, height: usize) {
+pub fn draw_gpu(
+    drawing_json: wasm_bindgen::JsValue,
+    width: usize,
+    height: usize,
+    source_bytes: Vec<u8>,
+) {
     let drawing = Drawing::from(drawing_json);
-    wasm_bindgen_futures::spawn_local(draw_gpu_internal(drawing, width, height));
+    wasm_bindgen_futures::spawn_local(draw_gpu_internal(drawing, width, height, source_bytes));
 }
 
-async fn draw_gpu_internal(drawing: Drawing, width: usize, height: usize) {
+async fn draw_gpu_internal(drawing: Drawing, width: usize, height: usize, source_bytes: Vec<u8>) {
     // draw on GPU and read output_buffer
-    let engine = Engine::new(width, height).await;
+    let engine = &Engine::new(&source_bytes, width, height).await;
     engine.draw(drawing).await;
-    let bytes = get_bytes(engine.output_buffer).await;
+
+    // getting the bytes this way seems to work, can draw on canvas
+    let drawing_bytes = get_bytes(&engine.drawing_output_buffer).await;
 
     // draw to HtmlCanvasElement
     let canvas = get_canvas_by_id("wgpu-canvas");
     resize_canvas(&canvas, width as u32, height as u32);
-    draw_buffer(&bytes, &canvas);
+    draw_buffer(&drawing_bytes, &canvas);
+
+    // calculate fitness (error=source-drawing)
+    engine.calculate_error(width as u32, height as u32).await;
+
+    // this comes back all 0s but the logic is the same as reading drawing_bytes not sure what's going on
+    let error_bytes = get_bytes(&engine.error_output_buffer).await;
+
+    // log::info!("error_bytes: {:?}", error_bytes);
+    let error = calculate_error_from_gpu(error_bytes);
+
+    let max_total_error = MAX_ERROR_PER_PIXEL * width as f32 * height as f32;
+    let fitness = 100.0 * (1.0 - error / max_total_error);
+    log::info!("error: {}, fitness: {}", error, fitness);
+}
+
+pub fn calculate_error_from_gpu(error_bytes: Vec<u8>) -> f32 {
+    let error_bytes_f32: Vec<f32> = error_bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()) * 255.0)
+        .collect();
+
+    error_bytes_f32
+        .chunks_exact(4)
+        .map(|c| {
+            let re = c[0];
+            let ge = c[1];
+            let be = c[2];
+            // let ae = c[3]; // alpha ignored
+            f32::sqrt((re * re) + (ge * ge) + (be * be))
+        })
+        .sum()
+}
+
+pub fn check_error_calcs(
+    source_bytes: &Vec<u8>,
+    drawing_bytes: &Vec<u8>,
+    error_bytes_f32: &Vec<f32>,
+) {
+    assert_eq!(source_bytes.len(), drawing_bytes.len());
+    assert_eq!(source_bytes.len(), error_bytes_f32.len());
+
+    let mut error1 = 0.0;
+    let num_pixels = source_bytes.len() / 4;
+    for i in 0..num_pixels {
+        let r = (i * 4) as usize;
+        let g = r + 1;
+        let b = g + 1;
+        // let a = b + 1; // don't need to involve alpha in error calc
+
+        // can't subtract u8 from u8 -> potential underflow
+        let re = drawing_bytes[r] as isize - source_bytes[r] as isize;
+        let ge = drawing_bytes[g] as isize - source_bytes[g] as isize;
+        let be = drawing_bytes[b] as isize - source_bytes[b] as isize;
+
+        error1 += f64::sqrt(((re * re) + (ge * ge) + (be * be)) as f64);
+    }
+
+    let error2: f64 = error_bytes_f32
+        .chunks_exact(4)
+        .map(|c| {
+            let re = c[0];
+            let ge = c[1];
+            let be = c[2];
+            // let ae = c[3]; // alpha ignored
+            f64::sqrt(((re * re) + (ge * ge) + (be * be)) as f64)
+        })
+        .sum();
+
+    log::info!("{} vs {}", error1, error2);
 }
 
 pub fn randomf64_clamped(min: f64, max: f64) -> f64 {
@@ -116,9 +195,9 @@ pub fn toArray<T, const N: usize>(v: Vec<T>) -> [T; N] {
         .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
 }
 
-pub async fn get_bytes(output_buffer: wgpu::Buffer) -> Vec<u8> {
-    // Note that we're not calling `.await` here.
+pub async fn get_bytes(output_buffer: &wgpu::Buffer) -> Vec<u8> {
     let buffer_slice = output_buffer.slice(..);
+
     // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
     let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
