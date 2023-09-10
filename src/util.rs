@@ -6,7 +6,14 @@ use web_sys::{
     CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData,
 };
 
-use crate::{model::{drawing::Drawing, settings::MAX_ERROR_PER_PIXEL}, texture::Texture, Engine};
+use crate::{
+    model::{
+        drawing::Drawing,
+        settings::{MAX_ERROR_PER_PIXEL, PER_POINT_MULTIPLIER},
+    },
+    texture::Texture,
+    Engine,
+};
 use rand::Rng;
 
 pub struct Timer<'a> {
@@ -89,6 +96,89 @@ pub fn draw(
 }
 
 #[wasm_bindgen()]
+pub fn start_loop(
+    drawing_json: wasm_bindgen::JsValue,
+    width: usize,
+    height: usize,
+    source_bytes: Vec<u8>,
+    n: usize,
+) {
+    // let drawing = Drawing::from(drawing_json);
+    let drawing = Drawing::new_random(); // test starting from scratch
+    wasm_bindgen_futures::spawn_local(loop_internal(drawing, width, height, source_bytes, n));
+}
+
+async fn loop_internal(
+    mut drawing: Drawing,
+    width: usize,
+    height: usize,
+    source_bytes: Vec<u8>,
+    n: usize,
+) {
+    let canvas = get_canvas_by_id("wgpu-canvas");
+    resize_canvas(&canvas, width as u32, height as u32);
+    let engine = &Engine::new(&source_bytes, width, height).await;
+
+    // even if it was already set evaluate it again, could be coming in from a different rendering engine
+    drawing.fitness = (evaluate_drawing(&drawing, engine, width, height).await).1;
+
+    for _ in 0..n {
+        drawing = mutate_new_best(drawing, engine, width, height).await;
+        log::info!("New fitness = {}", drawing.fitness);
+        draw_buffer(&(get_bytes(&engine.drawing_output_buffer).await), &canvas);
+    }
+
+    log::info!("Loop done (x{}), fitness = {}", n, drawing.fitness);
+}
+
+async fn mutate_new_best(
+    mut drawing: Drawing,
+    engine: &Engine,
+    width: usize,
+    height: usize,
+) -> Drawing {
+    let current_best = drawing.fitness;
+    // log::info!("Current fitness = {}", current_best);
+    while drawing.fitness <= current_best {
+        drawing.is_dirty = false;
+        while !drawing.is_dirty {
+            drawing.mutate();
+        }
+        drawing.fitness = (evaluate_drawing(&drawing, &engine, width, height).await).1;
+    }
+    // log::info!(
+    //     "New mutation found, fitness improved from {} to {}",
+    //     current_best,
+    //     drawing.fitness
+    // );
+    drawing
+}
+
+async fn evaluate_drawing(
+    drawing: &Drawing,
+    engine: &Engine,
+    width: usize,
+    height: usize,
+) -> (f64, f64) {
+    // step 1 - render pipeline --> draw our triangles to a texture
+    engine.draw(&drawing).await;
+
+    // Step 2 - compute pipeline --> diff drawing texture vs source texture
+    engine.calculate_error(width as u32, height as u32).await;
+
+    // Step 3 - sum output of compute pipeline // TODO: reduction on GPU
+    let error_bytes = get_bytes(&engine.error_output_buffer).await;
+    let error = calculate_error_from_gpu(error_bytes);
+    let max_total_error: f64 = MAX_ERROR_PER_PIXEL * width as f64 * height as f64;
+    let mut fitness: f64 = 100.0 * (1.0 - error / max_total_error);
+    let penalty = fitness * PER_POINT_MULTIPLIER * drawing.num_points() as f64;
+    fitness -= penalty;
+    // FIXME: figure out why we're getting completely different values than the non gpu version
+    log::info!("max_total_error: {}, penalty: {}, fitness: {}", max_total_error, penalty, fitness);
+    (error, fitness)
+}
+
+#[wasm_bindgen()]
 pub fn draw_gpu(
     drawing_json: wasm_bindgen::JsValue,
     width: usize,
@@ -99,34 +189,37 @@ pub fn draw_gpu(
     wasm_bindgen_futures::spawn_local(draw_gpu_internal(drawing, width, height, source_bytes));
 }
 
-async fn draw_gpu_internal(drawing: Drawing, width: usize, height: usize, source_bytes: Vec<u8>) {
+async fn draw_gpu_internal(
+    mut drawing: Drawing,
+    width: usize,
+    height: usize,
+    source_bytes: Vec<u8>,
+) {
     // draw on GPU and read output_buffer
     let engine = &Engine::new(&source_bytes, width, height).await;
-    engine.draw(drawing).await;
+    engine.draw(&drawing).await;
+
+    let (error, fitness) = evaluate_drawing(&drawing, engine, width, height).await;
+    drawing.fitness = fitness;
+    log::info!("error = {}, fitness = {}", error, fitness);
 
     // getting the bytes this way seems to work, can draw on canvas
     let drawing_bytes = get_bytes(&engine.drawing_output_buffer).await;
+    draw_on_canvas(drawing_bytes, width, height);
+}
 
+fn draw_on_canvas(drawing_bytes: Vec<u8>, width: usize, height: usize) {
+    wasm_bindgen_futures::spawn_local(draw_on_canvas_internal(drawing_bytes, width, height));
+}
+
+async fn draw_on_canvas_internal(drawing_bytes: Vec<u8>, width: usize, height: usize) {
     // draw to HtmlCanvasElement
     let canvas = get_canvas_by_id("wgpu-canvas");
     resize_canvas(&canvas, width as u32, height as u32);
     draw_buffer(&drawing_bytes, &canvas);
-
-    // calculate fitness (error=source-drawing)
-    engine.calculate_error(width as u32, height as u32).await;
-
-    // this comes back all 0s but the logic is the same as reading drawing_bytes not sure what's going on
-    let error_bytes = get_bytes(&engine.error_output_buffer).await;
-
-    // log::info!("error_bytes: {:?}", error_bytes);
-    let error = calculate_error_from_gpu(error_bytes);
-
-    let max_total_error = MAX_ERROR_PER_PIXEL * width as f32 * height as f32;
-    let fitness = 100.0 * (1.0 - error / max_total_error);
-    log::info!("error: {}, fitness: {}", error, fitness);
 }
 
-pub fn calculate_error_from_gpu(error_bytes: Vec<u8>) -> f32 {
+pub fn calculate_error_from_gpu(error_bytes: Vec<u8>) -> f64 {
     let error_bytes_f32: Vec<f32> = error_bytes
         .chunks_exact(4)
         .map(|c| f32::from_ne_bytes(c.try_into().unwrap()) * 255.0)
@@ -139,7 +232,7 @@ pub fn calculate_error_from_gpu(error_bytes: Vec<u8>) -> f32 {
             let ge = c[1];
             let be = c[2];
             // let ae = c[3]; // alpha ignored
-            f32::sqrt((re * re) + (ge * ge) + (be * be))
+            f64::sqrt(((re * re) + (ge * ge) + (be * be)) as f64)
         })
         .sum()
 }
@@ -204,8 +297,12 @@ pub async fn get_bytes(output_buffer: &wgpu::Buffer) -> Vec<u8> {
 
     if let Some(Ok(())) = receiver.receive().await {
         let padded_buffer = buffer_slice.get_mapped_range();
-        return padded_buffer.to_vec();
+        let vec = padded_buffer.to_vec();
+        drop(padded_buffer); // avoid --> "You cannot unmap a buffer that still has accessible mapped views."
+        output_buffer.unmap(); // avoid --> Buffer ObjectId { id: Some(1) } is already mapped' (breaks looping logic)
+        return vec;
     } else {
+        output_buffer.unmap(); // probably makes no difference but just to be safe
         return vec![];
     }
 }

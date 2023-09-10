@@ -2,6 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export function draw(a: number, b: number, c: number, d: number): void;
+export function start_loop(a: number, b: number, c: number, d: number, e: number, f: number): void;
 export function draw_gpu(a: number, b: number, c: number, d: number, e: number): void;
 export function main(): void;
 export function __wbindgen_malloc(a: number, b: number): number;

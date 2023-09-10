@@ -1,5 +1,5 @@
-pub const MAX_ERROR_PER_PIXEL: f32 = 441.6729559300637; // Math::sqrt(255.0 * 255.0 * 3.0);
-pub const PER_POINT_MULTIPLIER: f32 = 1.0 / 5000000.0;
+pub const MAX_ERROR_PER_PIXEL: f64 = 441.6729559300637; // Math::sqrt(255.0 * 255.0 * 3.0);
+pub const PER_POINT_MULTIPLIER: f64 = 1.0 / 5000000.0;
 pub const MIN_ALPHA: u8 = 10;
 pub const MAX_ALPHA: u8 = 65;
 pub const ADD_POLYGON_PROB: f32 = 1.0 / 50.0;

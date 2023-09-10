@@ -12,6 +12,14 @@ export function draw(canvas: any, drawing_json: any, width: number, height: numb
 * @param {number} width
 * @param {number} height
 * @param {Uint8Array} source_bytes
+* @param {number} n
+*/
+export function start_loop(drawing_json: any, width: number, height: number, source_bytes: Uint8Array, n: number): void;
+/**
+* @param {any} drawing_json
+* @param {number} width
+* @param {number} height
+* @param {Uint8Array} source_bytes
 */
 export function draw_gpu(drawing_json: any, width: number, height: number, source_bytes: Uint8Array): void;
 /**
@@ -23,6 +31,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly draw: (a: number, b: number, c: number, d: number) => void;
+  readonly start_loop: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly draw_gpu: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -278,7 +278,7 @@ impl Engine {
         }
     }
 
-    pub async fn draw(&self, drawing: Drawing) -> wgpu::SubmissionIndex {
+    pub async fn draw(&self, drawing: &Drawing) -> wgpu::SubmissionIndex {
         let vertices: Vec<Vertex> = drawing.to_vertices();
 
         // create buffer, write buffer (bytemuck?)
@@ -359,7 +359,7 @@ impl Engine {
         drop(cpass);
 
         let bytes_per_row = self.buffer_dimensions.padded_bytes_per_row as u32 * 4;
-        log::info!("bytes_per_row: {}", bytes_per_row);
+        // log::info!("bytes_per_row: {}", bytes_per_row);
 
         // Copy the data from the texture to the buffer
         encoder.copy_texture_to_buffer(

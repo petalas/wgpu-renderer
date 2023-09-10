@@ -19,7 +19,7 @@ use super::{
 pub struct Drawing {
     pub polygons: Vec<Polygon>,
     pub is_dirty: bool,
-    pub fitness: f32,
+    pub fitness: f64,
 }
 
 impl Drawing {

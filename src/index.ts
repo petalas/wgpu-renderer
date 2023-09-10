@@ -1,6 +1,11 @@
 import test from "./assets/test.json";
 // import test from "./assets/simple.json";
-import { draw, draw_gpu, default as init } from "./assets/wasm/renderer";
+import {
+  draw,
+  draw_gpu,
+  start_loop,
+  default as init,
+} from "./assets/wasm/renderer";
 
 // @ts-ignore // FIXME: Cannot find module but it actually works fine?
 import firefox from "./assets/firefox.jpg";
@@ -8,7 +13,7 @@ import firefox from "./assets/firefox.jpg";
 import "./reset.css";
 import "./styles.css";
 
-const size = 256;
+const size = 384;
 
 const source_img = document.getElementById("source-img") as HTMLImageElement;
 source_img.src = firefox;
@@ -30,6 +35,23 @@ init().then(() => {
   stats.innerText = `Rendering at: ${size}x${size}\nTriangles: ${test.polygons.length}`;
 
   const source_bytes = new Uint8Array(getImageData(source_img).data);
+
   draw(document.getElementById("ref-canvas"), drawing, size, size);
   draw_gpu(drawing, size, size, source_bytes);
+
+  const setupLoopBtn = (times: number) => {
+    const loopBtn = document.getElementById("loopBtn");
+    loopBtn.innerText = `Loop ${times} times`;
+    loopBtn.onclick = () =>
+      start_loop(drawing, size, size, source_bytes, times);
+  };
+
+  const loopTimes = document.getElementById("loopTimes") as HTMLInputElement;
+  loopTimes.onchange = (e) => {
+    const self = e.target as HTMLButtonElement;
+    const val = Number(self.value);
+    setupLoopBtn(val);
+  };
+
+  setupLoopBtn(Number(loopTimes.value));
 });
