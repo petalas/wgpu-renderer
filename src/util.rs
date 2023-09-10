@@ -1,9 +1,10 @@
 use std::mem::size_of;
 
+use log::info;
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
 use web_sys::{
-    console::{self, info},
-    CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData,
+    console::{self},
+    CanvasRenderingContext2d, Element, HtmlCanvasElement, HtmlImageElement, ImageData,
 };
 
 use crate::{
@@ -92,7 +93,7 @@ pub fn draw(
         .unwrap();
 
     let data = Drawing::from(drawing_json).draw(&ctx, true).unwrap();
-    log::info!("canvas bytes: {:?}", data.len());
+    info!("canvas bytes: {:?}", data.len());
 }
 
 #[wasm_bindgen()]
@@ -115,17 +116,17 @@ async fn loop_internal(
     source_bytes: Vec<u8>,
     n: usize,
 ) {
-    let canvas = get_canvas_by_id("wgpu-canvas");
-    resize_canvas(&canvas, width as u32, height as u32);
+    // let canvas = get_canvas_by_id("wgpu-canvas");
     let engine = &Engine::new(&source_bytes, width, height).await;
 
     // even if it was already set evaluate it again, could be coming in from a different rendering engine
     drawing.fitness = (evaluate_drawing(&drawing, engine, width, height).await).1;
 
-    for _ in 0..n {
+    for i in 0..n {
         drawing = mutate_new_best(drawing, engine, width, height).await;
-        log::info!("New fitness = {}", drawing.fitness);
-        draw_buffer(&(get_bytes(&engine.drawing_output_buffer).await), &canvas);
+        log::info!("{} --> fitness = {}", i, drawing.fitness);
+        // draw_buffer(&(get_bytes(&engine.drawing_output_buffer).await), &canvas);
+        draw_on_canvas(get_bytes(&engine.drawing_output_buffer).await, width, height);
     }
 
     log::info!("Loop done (x{}), fitness = {}", n, drawing.fitness);
@@ -138,16 +139,20 @@ async fn mutate_new_best(
     height: usize,
 ) -> Drawing {
     let current_best = drawing.fitness;
+    // let mut count = 0;
     // log::info!("Current fitness = {}", current_best);
     while drawing.fitness <= current_best {
         drawing.is_dirty = false;
+        // count = 0;
         while !drawing.is_dirty {
             drawing.mutate();
+            // count += 1;
         }
+        // info!("took {} attempts to get a new mutation", count);
         drawing.fitness = (evaluate_drawing(&drawing, &engine, width, height).await).1;
     }
-    // log::info!(
-    //     "New mutation found, fitness improved from {} to {}",
+    // info!(
+    //     "fitness improved from {} to {}",
     //     current_best,
     //     drawing.fitness
     // );
@@ -174,7 +179,12 @@ async fn evaluate_drawing(
     let penalty = fitness * PER_POINT_MULTIPLIER * drawing.num_points() as f64;
     fitness -= penalty;
     // FIXME: figure out why we're getting completely different values than the non gpu version
-    log::info!("max_total_error: {}, penalty: {}, fitness: {}", max_total_error, penalty, fitness);
+    // log::info!(
+    //     "error: {}, penalty: {}, fitness: {}",
+    //     error,
+    //     penalty,
+    //     fitness
+    // );
     (error, fitness)
 }
 

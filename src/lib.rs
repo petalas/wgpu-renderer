@@ -1,10 +1,17 @@
 use model::drawing::Drawing;
+use web_sys::HtmlCanvasElement;
 use std::borrow::Cow;
 use std::mem::{self};
 use texture::Texture;
 use util::BufferDimensions;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wgpu::{BlendState, vertex_attr_array};
+use wgpu::{vertex_attr_array, BlendState};
+use winit::{
+    event::*,
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    platform::*
+};
 mod model;
 mod texture;
 mod util;
@@ -201,7 +208,7 @@ impl Engine {
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
             array_stride: (mem::size_of::<f32>() * 8) as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &vertex_attr_array![0 => Float32x4, 1 => Float32x4]
+            attributes: &vertex_attr_array![0 => Float32x4, 1 => Float32x4],
         };
 
         let mut primitive = wgpu::PrimitiveState::default();
@@ -383,4 +390,47 @@ impl Engine {
 pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Debug).expect("could not initialize logger");
+
+    let size = 384; // FIXME: set from JS side?
+
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    // Winit prevents sizing with CSS, so we have to set
+    // the size manually when on web.
+    use winit::dpi::PhysicalSize;
+    window.set_inner_size(PhysicalSize::new(size, size));
+
+    use winit::platform::web::WindowExtWebSys;
+    web_sys::window()
+        .and_then(|win| win.document())
+        .and_then(|doc| {
+            let dst = doc.get_element_by_id("wgpu-canvas-container")?;
+            let canvas = web_sys::Element::from(window.canvas());
+            canvas.set_id("wgpu-canvas");
+            canvas.remove_attribute("style");
+            dst.append_child(&canvas).ok()?;
+            Some(())
+        })
+        .expect("Failed to append winit canvas");
+
+    event_loop.run(move |event, _, control_flow| match event {
+        Event::WindowEvent {
+            ref event,
+            window_id,
+        } if window_id == window.id() => match event {
+            WindowEvent::CloseRequested
+            | WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        ..
+                    },
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            _ => {}
+        },
+        _ => {}
+    });
 }

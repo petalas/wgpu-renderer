@@ -17,44 +17,42 @@ h2 {
   padding: 2rem;
 }
 
-#wgpu {
-  aspect-ratio: 1 / 1;
-}
-
 .row {
   display: flex;
   flex-direction: row;
-  margin: 1rem;
-  
-  gap: 1rem;
+  width: 100%;
+
   justify-content: center;
   align-items: center;
+
+  margin: 0.5rem;
+  gap: 0.5rem;
 }
 
 .canvas-wrapper {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  border-radius: 0.3rem;
-  padding: 1rem;
+  flex: 0.333333;
+
   box-shadow: var(--box-shadow-z8);
+
+  margin: 0.5rem;
 }
 
 .canvas-wrapper label {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  margin-bottom: 1rem;
-}
-
-.row canvas, .row img {
-  width: 256px;
-  height: 256px;
-  /* outline: 1px solid black; */
+  margin: 0.5rem;
 }
 
 .stats {
   margin: 1rem;
   text-align: center;
+}
+
+img,
+canvas {
+  width: 100%;
+  height: auto;
+  display: block;
 }

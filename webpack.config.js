@@ -11,6 +11,9 @@ module.exports = {
     static: {
       directory: path.resolve(__dirname, "dist"),
     },
+    client: {
+      overlay: false,
+    },
     hot: true,
     open: true,
   },
