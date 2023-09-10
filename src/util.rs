@@ -1,20 +1,8 @@
 use std::mem::size_of;
 
-use log::info;
-use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
-use web_sys::{
-    console::{self},
-    CanvasRenderingContext2d, Element, HtmlCanvasElement, HtmlImageElement, ImageData,
-};
+use wasm_bindgen::JsCast;
+use web_sys::{CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
 
-use crate::{
-    model::{
-        drawing::Drawing,
-        settings::{MAX_ERROR_PER_PIXEL, PER_POINT_MULTIPLIER},
-    },
-    texture::Texture,
-    Engine,
-};
 use rand::Rng;
 
 pub struct Timer<'a> {
@@ -23,14 +11,14 @@ pub struct Timer<'a> {
 
 impl<'a> Timer<'a> {
     pub fn new(name: &'a str) -> Timer<'a> {
-        console::time_with_label(name);
+        web_sys::console::time_with_label(name);
         Timer { name }
     }
 }
 
 impl<'a> Drop for Timer<'a> {
     fn drop(&mut self) {
-        console::time_end_with_label(self.name);
+        web_sys::console::time_end_with_label(self.name);
     }
 }
 
@@ -67,165 +55,8 @@ pub fn get_canvas_by_id(id: &str) -> HtmlCanvasElement {
     return element.dyn_into::<HtmlCanvasElement>().unwrap();
 }
 
-pub fn resize_canvas(canvas: &HtmlCanvasElement, w: u32, h: u32) {
-    canvas.set_width(w);
-    canvas.set_height(h);
-}
-
-#[wasm_bindgen()]
-pub fn draw(
-    canvas: wasm_bindgen::JsValue,
-    drawing_json: wasm_bindgen::JsValue,
-    width: usize,
-    height: usize,
-) {
-    let canvas = canvas
-        .dyn_into::<HtmlCanvasElement>()
-        .expect("Not an HTML Canvas");
-
-    resize_canvas(&canvas, width as u32, height as u32);
-
-    let ctx = canvas
-        .get_context("2d")
-        .unwrap()
-        .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .unwrap();
-
-    let data = Drawing::from(drawing_json).draw(&ctx, true).unwrap();
-    info!("canvas bytes: {:?}", data.len());
-}
-
-#[wasm_bindgen()]
-pub fn start_loop(
-    drawing_json: wasm_bindgen::JsValue,
-    width: usize,
-    height: usize,
-    source_bytes: Vec<u8>,
-    n: usize,
-) {
-    // let drawing = Drawing::from(drawing_json);
-    let drawing = Drawing::new_random(); // test starting from scratch
-    wasm_bindgen_futures::spawn_local(loop_internal(drawing, width, height, source_bytes, n));
-}
-
-async fn loop_internal(
-    mut drawing: Drawing,
-    width: usize,
-    height: usize,
-    source_bytes: Vec<u8>,
-    n: usize,
-) {
-    // let canvas = get_canvas_by_id("wgpu-canvas");
-    let engine = &Engine::new(&source_bytes, width, height).await;
-
-    // even if it was already set evaluate it again, could be coming in from a different rendering engine
-    drawing.fitness = (evaluate_drawing(&drawing, engine, width, height).await).1;
-
-    for i in 0..n {
-        drawing = mutate_new_best(drawing, engine, width, height).await;
-        log::info!("{} --> fitness = {}", i, drawing.fitness);
-        // draw_buffer(&(get_bytes(&engine.drawing_output_buffer).await), &canvas);
-        draw_on_canvas(get_bytes(&engine.drawing_output_buffer).await, width, height);
-    }
-
-    log::info!("Loop done (x{}), fitness = {}", n, drawing.fitness);
-}
-
-async fn mutate_new_best(
-    mut drawing: Drawing,
-    engine: &Engine,
-    width: usize,
-    height: usize,
-) -> Drawing {
-    let current_best = drawing.fitness;
-    // let mut count = 0;
-    // log::info!("Current fitness = {}", current_best);
-    while drawing.fitness <= current_best {
-        drawing.is_dirty = false;
-        // count = 0;
-        while !drawing.is_dirty {
-            drawing.mutate();
-            // count += 1;
-        }
-        // info!("took {} attempts to get a new mutation", count);
-        drawing.fitness = (evaluate_drawing(&drawing, &engine, width, height).await).1;
-    }
-    // info!(
-    //     "fitness improved from {} to {}",
-    //     current_best,
-    //     drawing.fitness
-    // );
-    drawing
-}
-
-async fn evaluate_drawing(
-    drawing: &Drawing,
-    engine: &Engine,
-    width: usize,
-    height: usize,
-) -> (f64, f64) {
-    // step 1 - render pipeline --> draw our triangles to a texture
-    engine.draw(&drawing).await;
-
-    // Step 2 - compute pipeline --> diff drawing texture vs source texture
-    engine.calculate_error(width as u32, height as u32).await;
-
-    // Step 3 - sum output of compute pipeline // TODO: reduction on GPU
-    let error_bytes = get_bytes(&engine.error_output_buffer).await;
-    let error = calculate_error_from_gpu(error_bytes);
-    let max_total_error: f64 = MAX_ERROR_PER_PIXEL * width as f64 * height as f64;
-    let mut fitness: f64 = 100.0 * (1.0 - error / max_total_error);
-    let penalty = fitness * PER_POINT_MULTIPLIER * drawing.num_points() as f64;
-    fitness -= penalty;
-    // FIXME: figure out why we're getting completely different values than the non gpu version
-    // log::info!(
-    //     "error: {}, penalty: {}, fitness: {}",
-    //     error,
-    //     penalty,
-    //     fitness
-    // );
-    (error, fitness)
-}
-
-#[wasm_bindgen()]
-pub fn draw_gpu(
-    drawing_json: wasm_bindgen::JsValue,
-    width: usize,
-    height: usize,
-    source_bytes: Vec<u8>,
-) {
-    let drawing = Drawing::from(drawing_json);
-    wasm_bindgen_futures::spawn_local(draw_gpu_internal(drawing, width, height, source_bytes));
-}
-
-async fn draw_gpu_internal(
-    mut drawing: Drawing,
-    width: usize,
-    height: usize,
-    source_bytes: Vec<u8>,
-) {
-    // draw on GPU and read output_buffer
-    let engine = &Engine::new(&source_bytes, width, height).await;
-    engine.draw(&drawing).await;
-
-    let (error, fitness) = evaluate_drawing(&drawing, engine, width, height).await;
-    drawing.fitness = fitness;
-    log::info!("error = {}, fitness = {}", error, fitness);
-
-    // getting the bytes this way seems to work, can draw on canvas
-    let drawing_bytes = get_bytes(&engine.drawing_output_buffer).await;
-    draw_on_canvas(drawing_bytes, width, height);
-}
-
-fn draw_on_canvas(drawing_bytes: Vec<u8>, width: usize, height: usize) {
-    wasm_bindgen_futures::spawn_local(draw_on_canvas_internal(drawing_bytes, width, height));
-}
-
-async fn draw_on_canvas_internal(drawing_bytes: Vec<u8>, width: usize, height: usize) {
-    // draw to HtmlCanvasElement
-    let canvas = get_canvas_by_id("wgpu-canvas");
-    resize_canvas(&canvas, width as u32, height as u32);
+pub async fn draw_on_canvas_internal(drawing_bytes: &Vec<u8>, canvas_id: &str) {
+    let canvas = get_canvas_by_id(&canvas_id);
     draw_buffer(&drawing_bytes, &canvas);
 }
 
@@ -291,11 +122,6 @@ pub fn randomf64_clamped(min: f64, max: f64) -> f64 {
 
 pub fn randomf32_clamped(min: f32, max: f32) -> f32 {
     return rand::thread_rng().gen_range(min..max);
-}
-
-pub fn toArray<T, const N: usize>(v: Vec<T>) -> [T; N] {
-    v.try_into()
-        .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
 }
 
 pub async fn get_bytes(output_buffer: &wgpu::Buffer) -> Vec<u8> {

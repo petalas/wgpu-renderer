@@ -1,17 +1,17 @@
+use log::info;
 use model::drawing::Drawing;
-use web_sys::HtmlCanvasElement;
 use std::borrow::Cow;
 use std::mem::{self};
 use texture::Texture;
 use util::BufferDimensions;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 use wgpu::{vertex_attr_array, BlendState};
-use winit::{
-    event::*,
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-    platform::*
-};
+
+use crate::entrypoints::draw_without_gpu;
+use crate::model::settings::{MAX_ERROR_PER_PIXEL, PER_POINT_MULTIPLIER};
+use crate::util::{calculate_error_from_gpu, draw_on_canvas_internal, get_bytes};
+mod entrypoints;
 mod model;
 mod texture;
 mod util;
@@ -23,7 +23,10 @@ struct Vertex {
     color: [f32; 4],
 }
 
-struct Engine {
+#[wasm_bindgen()]
+pub struct Engine {
+    width: usize,
+    height: usize,
     device: wgpu::Device,
     queue: wgpu::Queue,
     buffer_dimensions: BufferDimensions,
@@ -36,10 +39,25 @@ struct Engine {
     compute_pipeline: wgpu::ComputePipeline,
     error_output_buffer: wgpu::Buffer,
     error_output_texture: wgpu::Texture,
+    running: bool,
+    best_drawing: Drawing,
+    best_drawing_bytes: Vec<u8>,
 }
 
+#[wasm_bindgen()]
 impl Engine {
-    pub async fn new(source_bytes: &Vec<u8>, width: usize, height: usize) -> Self {
+    pub fn toggle_pause(&mut self) {
+        self.running = !self.running;
+    }
+
+    pub async fn new(
+        source_bytes: Vec<u8>,
+        best_drawing: JsValue,
+        width: usize,
+        height: usize,
+    ) -> Self {
+        let running = false;
+
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
@@ -269,7 +287,19 @@ impl Engine {
             entry_point: "main",
         });
 
+        // test draw source_bytes to canvas to check if they look the same as source image
+        // draw_on_canvas_internal(&source_bytes, "ref-canvas").await;
+
+        let best_drawing: Drawing = match best_drawing.is_falsy() {
+            true => Drawing::new_random(),
+            false => Drawing::from(best_drawing),
+        };
+
+        let best_drawing_bytes: Vec<u8> = vec![]; // can only set after drawing in post_init
+
         Engine {
+            width,
+            height,
             device,
             queue,
             buffer_dimensions,
@@ -282,10 +312,14 @@ impl Engine {
             compute_pipeline,
             error_output_buffer,
             error_output_texture,
+            running,
+            best_drawing,
+            best_drawing_bytes,
         }
     }
 
-    pub async fn draw(&self, drawing: &Drawing) -> wgpu::SubmissionIndex {
+    async fn draw(&self, drawing: &Drawing) {
+        // let drawing: Drawing = Drawing::from(d);
         let vertices: Vec<Vertex> = drawing.to_vertices();
 
         // create buffer, write buffer (bytemuck?)
@@ -307,14 +341,14 @@ impl Engine {
                 .drawing_texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
-            // Set the background to be red
+            // Set the background to be white
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), // WHY DOES DRAWING WHITE TRIANGLES ON TOP OF THIS DO ANYTHING?
                         store: true,
                     },
                 })],
@@ -347,10 +381,10 @@ impl Engine {
             encoder.finish()
         };
 
-        self.queue.submit(Some(command_buffer))
+        self.queue.submit(Some(command_buffer));
     }
 
-    pub async fn calculate_error(&self, width: u32, height: u32) -> wgpu::SubmissionIndex {
+    async fn calculate_error(&self, width: u32, height: u32) -> wgpu::SubmissionIndex {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -384,53 +418,89 @@ impl Engine {
 
         self.queue.submit(Some(encoder.finish()))
     }
-}
 
-#[wasm_bindgen(start)]
-pub fn main() {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Debug).expect("could not initialize logger");
+    async fn evaluate_drawing(&self, drawing: &Drawing) -> (f64, f64) {
+        // step 1 - render pipeline --> draw our triangles to a texture
+        self.draw(&drawing).await;
 
-    let size = 384; // FIXME: set from JS side?
+        // Step 2 - compute pipeline --> diff drawing texture vs source texture
+        self.calculate_error(self.width as u32, self.height as u32)
+            .await;
 
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+        // Step 3 - sum output of compute pipeline // TODO: reduction on GPU
+        let error_bytes = get_bytes(&self.error_output_buffer).await;
+        let error = calculate_error_from_gpu(error_bytes);
+        let max_total_error: f64 = MAX_ERROR_PER_PIXEL * self.width as f64 * self.height as f64;
+        let mut fitness: f64 = 100.0 * (1.0 - error / max_total_error);
+        let penalty = fitness * PER_POINT_MULTIPLIER * drawing.num_points() as f64;
+        fitness -= penalty;
+        (error, fitness)
+    }
 
-    // Winit prevents sizing with CSS, so we have to set
-    // the size manually when on web.
-    use winit::dpi::PhysicalSize;
-    window.set_inner_size(PhysicalSize::new(size, size));
+    async fn mutate_new_best(&self, mut drawing: Drawing) -> Drawing {
+        let current_best = drawing.fitness;
+        let mut c1;
+        let mut c2: i32 = 0;
+        // log::info!("Current fitness = {}", current_best);
+        while drawing.fitness <= current_best {
+            drawing.is_dirty = false;
+            c1 = 0;
+            while !drawing.is_dirty {
+                // it's possible it won't be mutated at all since all mutations have low probability
+                drawing.mutate();
+                c1 += 1; // for one mutation
+                c2 += 1; // total
+                if c1 >= 100 && c1 % 100 == 0 {
+                    info!("Taking over {} attempts to get a new mutation.", c1);
+                }
+                if c2 >= 100 && c2 % 100 == 0 {
+                    info!("Taking over {} attempts to get a new best.", c2);
+                }
+            }
+            drawing.fitness = (self.evaluate_drawing(&drawing).await).1;
+        }
+        if c2 > 100 {
+            info!("took {} attempts to get a new best", c2);
+        }
+        drawing
+    }
 
-    use winit::platform::web::WindowExtWebSys;
-    web_sys::window()
-        .and_then(|win| win.document())
-        .and_then(|doc| {
-            let dst = doc.get_element_by_id("wgpu-canvas-container")?;
-            let canvas = web_sys::Element::from(window.canvas());
-            canvas.set_id("wgpu-canvas");
-            canvas.remove_attribute("style");
-            dst.append_child(&canvas).ok()?;
-            Some(())
-        })
-        .expect("Failed to append winit canvas");
+    pub async fn post_init(&mut self) {
+        // even if it was already set evaluate it again, could be coming in from a different rendering engine
+        let (error, fitness) = self.evaluate_drawing(&self.best_drawing).await;
+        log::info!("error = {}, fitness = {}", error, fitness);
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state: ElementState::Pressed,
-                        virtual_keycode: Some(VirtualKeyCode::Escape),
-                        ..
-                    },
-                ..
-            } => *control_flow = ControlFlow::Exit,
-            _ => {}
-        },
-        _ => {}
-    });
+        self.best_drawing.fitness = fitness;
+        self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
+    }
+
+    pub async fn display_best_drawing(&self, canvas_id: &str) {
+        draw_on_canvas_internal(&self.best_drawing_bytes, &canvas_id).await;
+    }
+
+    pub async fn loop_n_times(&mut self, n: usize, canvas_id: &str) {
+        // even if it was already set evaluate it again, could be coming in from a different rendering engine
+        let (error, fitness) = self.evaluate_drawing(&self.best_drawing).await;
+        self.best_drawing.fitness = fitness;
+        log::info!("error = {}, fitness = {}", error, fitness);
+
+        let display_best = canvas_id.len() > 0;
+
+        for i in 0..n {
+            self.best_drawing = self.mutate_new_best(self.best_drawing.clone()).await;
+            self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
+            log::info!("{} --> fitness = {}", i, self.best_drawing.fitness);
+
+            // also draw non wgpu version on test canvas for comparison
+            draw_without_gpu(
+                JsValue::from_str(&serde_json::to_string(&self.best_drawing).unwrap()), // normally called from JS side
+                "ref-canvas",
+            );
+
+            if display_best {
+                // TODO: don't await here
+                self.display_best_drawing(&canvas_id).await;
+            }
+        }
+    }
 }

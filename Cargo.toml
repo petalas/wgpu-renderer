@@ -25,4 +25,3 @@ wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.37"
 web-sys = { version = "0.3.64", features = ["Window", "Document", "Element", "HtmlCanvasElement", "CanvasRenderingContext2d", "console", "ImageData", "OffscreenCanvas", "HtmlImageElement"] }
 wgpu = { version = "0.17.0" }
-winit = "0.28.6"
