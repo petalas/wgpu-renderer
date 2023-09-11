@@ -1,7 +1,7 @@
-// import test from "./assets/test.json";
+import test from "./assets/test.json";
 // import test from "./assets/test2"; // a: 127
 // import test from "./assets/test6"; // a: 127 no background
-import test from "./assets/test7"; // a: 127 white background
+// import test from "./assets/test7"; // a: 127 white background
 // import test from "./assets/test3"; // a: 224
 // import test from "./assets/test4"; // a: 32
 // import test from "./assets/test5"; // a: 32 no background
@@ -40,7 +40,7 @@ source_img.onload = (): void => initializeWithNewImage(source_img);
 source_img.src = firefox;
 
 // max for both dimensions -> will scale down maintaining aspect ratio
-const MAX_SIZE = 384;
+const MAX_SIZE = 512;
 
 // original source image dimensions
 let original_width: number;
@@ -124,7 +124,7 @@ const createEngine = async (settings: Settings): Promise<Engine> => {
   // test all black
   // const black = [0, 0, 0, 255];
   // const source_bytes = new Uint8Array(Array(w*h).fill(black).flat());
-  return Engine.new(source_bytes, best_drawing, w, h); // pass best_drawing instead of null normally, testing starting from scratch
+  return Engine.new(source_bytes, null, w, h); // pass best_drawing instead of null normally, testing starting from scratch
 };
 
 // called before loadWasm to adjust UI and setup state

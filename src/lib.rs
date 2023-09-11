@@ -18,7 +18,7 @@ mod util;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
+pub struct Vertex {
     position: [f32; 4],
     color: [f32; 4],
 }
@@ -319,7 +319,6 @@ impl Engine {
     }
 
     async fn draw(&self, drawing: &Drawing) {
-        // let drawing: Drawing = Drawing::from(d);
         let vertices: Vec<Vertex> = drawing.to_vertices();
 
         // create buffer, write buffer (bytemuck?)
@@ -453,7 +452,7 @@ impl Engine {
                 if c1 >= 100 && c1 % 100 == 0 {
                     info!("Taking over {} attempts to get a new mutation.", c1);
                 }
-                if c2 >= 100 && c2 % 100 == 0 {
+                if c2 >= 100 && c2 % 1000 == 0 {
                     info!("Taking over {} attempts to get a new best.", c2);
                 }
             }
@@ -492,15 +491,15 @@ impl Engine {
             log::info!("{} --> fitness = {}", i, self.best_drawing.fitness);
 
             // also draw non wgpu version on test canvas for comparison
-            draw_without_gpu(
-                JsValue::from_str(&serde_json::to_string(&self.best_drawing).unwrap()), // normally called from JS side
-                "ref-canvas",
-            );
+            // draw_without_gpu(
+            //     JsValue::from_str(&serde_json::to_string(&self.best_drawing).unwrap()), // normally called from JS side
+            //     "ref-canvas",
+            // );
+        }
 
-            if display_best {
-                // TODO: don't await here
-                self.display_best_drawing(&canvas_id).await;
-            }
+        if display_best {
+            // TODO: don't await here
+            self.display_best_drawing(&canvas_id).await;
         }
     }
 }
