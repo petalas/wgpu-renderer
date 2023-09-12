@@ -8,7 +8,7 @@
   <body>
     <div class="wrapper">
       <h2 id="header">Testing WGPU rendering.</h2>
-      <p class="stats"></p>
+      <p class="size-stats"></p>
       <div class="row">
         <div class="canvas-wrapper">
           <label for="source-img" class="label">SOURCE</label>
@@ -28,7 +28,10 @@
       <div class="row">
         <input id="loopTimes" type="number", min="1", max="10000000" value="20" />
         <button id="loopBtn" />
+        <button id="pauseBtn" />
       </div>
+
+      <div id="stats" class="stats column"></div>
 
     </div>
   </body>

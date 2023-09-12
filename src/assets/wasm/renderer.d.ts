@@ -40,24 +40,35 @@ export class Engine {
 * @returns {Promise<void>}
 */
   loop_n_times(n: number, canvas_id: string): Promise<void>;
+/**
+* @param {number} max_time_ms
+* @param {string} canvas_id
+* @returns {Promise<any>}
+*/
+  tick(max_time_ms: number, canvas_id: string): Promise<any>;
+/**
+*/
+  reset_stats(): void;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly main: () => void;
-  readonly draw_without_gpu: (a: number, b: number, c: number, d: number) => void;
   readonly __wbg_engine_free: (a: number) => void;
   readonly engine_toggle_pause: (a: number) => void;
   readonly engine_new: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly engine_post_init: (a: number) => number;
   readonly engine_display_best_drawing: (a: number, b: number, c: number) => number;
   readonly engine_loop_n_times: (a: number, b: number, c: number, d: number) => number;
+  readonly engine_tick: (a: number, b: number, c: number, d: number) => number;
+  readonly engine_reset_stats: (a: number) => void;
+  readonly main: () => void;
+  readonly draw_without_gpu: (a: number, b: number, c: number, d: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha2ed310a2790a573: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h51f4eeaaaf77ab04: (a: number, b: number, c: number) => void;
   readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1e2170f7e2ff2838: (a: number, b: number, c: number) => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;

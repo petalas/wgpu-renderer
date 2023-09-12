@@ -1,20 +1,30 @@
 use log::info;
 use model::drawing::Drawing;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::mem::{self};
 use texture::Texture;
 use util::BufferDimensions;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_timer::Instant;
 use wgpu::{vertex_attr_array, BlendState};
 
-use crate::entrypoints::draw_without_gpu;
 use crate::model::settings::{MAX_ERROR_PER_PIXEL, PER_POINT_MULTIPLIER};
-use crate::util::{calculate_error_from_gpu, draw_on_canvas_internal, get_bytes};
+use crate::util::{calculate_error_from_gpu, draw_on_canvas_internal, get_bytes, Timer};
 mod entrypoints;
 mod model;
 mod texture;
 mod util;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Stats {
+    generated: usize,
+    improvements: usize,
+    cycle_time: usize,
+    ticks: usize,
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -42,6 +52,7 @@ pub struct Engine {
     running: bool,
     best_drawing: Drawing,
     best_drawing_bytes: Vec<u8>,
+    stats: Stats,
 }
 
 #[wasm_bindgen()]
@@ -315,6 +326,12 @@ impl Engine {
             running,
             best_drawing,
             best_drawing_bytes,
+            stats: Stats {
+                generated: 0,
+                improvements: 0,
+                cycle_time: 0,
+                ticks: 0,
+            },
         }
     }
 
@@ -498,8 +515,45 @@ impl Engine {
         }
 
         if display_best {
-            // TODO: don't await here
+            // TODO: don't await here?
             self.display_best_drawing(&canvas_id).await;
         }
+    }
+
+    pub async fn tick(&mut self, max_time_ms: usize, canvas_id: &str) -> JsValue {
+        self.stats.ticks = 0;
+        let mut elapsed: usize = 0;
+        let display_best = canvas_id.len() > 0;
+        while elapsed < max_time_ms {
+            let _timer: Timer; // scope determines lifetime (time_end on destruction) -> can't be inside the if statement
+            if model::settings::DEBUG_TIMERS {
+                _timer = Timer::new("engine::tick");
+            }
+            self.stats.ticks += 1;
+            let t0 = Instant::now();
+
+            let mut clone = self.best_drawing.clone();
+            clone.mutate();
+            self.stats.generated += 1;
+            clone.fitness = (self.evaluate_drawing(&clone).await).1;
+            if clone.fitness > self.best_drawing.fitness {
+                self.best_drawing = clone;
+                self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
+                self.stats.improvements += 1;
+                if display_best {
+                    // TODO: don't await here?
+                    self.display_best_drawing(&canvas_id).await;
+                }
+            }
+            elapsed += t0.elapsed().as_millis() as usize;
+        }
+
+        self.stats.cycle_time = elapsed; // can't get f64 ms directly
+        return JsValue::from(serde_json::to_string(&self.stats).expect("Expected valid stats."));
+    }
+
+    pub fn reset_stats(&mut self) {
+        self.stats.generated = 0;
+        self.stats.improvements = 0;
     }
 }
