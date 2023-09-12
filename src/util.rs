@@ -1,5 +1,6 @@
 use std::mem::size_of;
 
+use log::info;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
 
@@ -35,10 +36,30 @@ pub fn get_context(canvas: &HtmlCanvasElement) -> CanvasRenderingContext2d {
 }
 
 pub fn draw_buffer(buffer: &Vec<u8>, canvas: &HtmlCanvasElement) {
-    let w = canvas.width();
+    let w = canvas.width() as usize;
+    let h = canvas.height() as usize;
     let ctx = get_context(&canvas);
-    let data = ImageData::new_with_u8_clamped_array(wasm_bindgen::Clamped(&buffer), w).unwrap();
-    ctx.put_image_data(&data, 0.0, 0.0).unwrap();
+
+    let clamped: wasm_bindgen::Clamped<&[u8]>;
+    let mut actual_data = vec![];
+    if buffer.len() == w * h * 4 {
+        // no padding has been added, can use directly
+        clamped = wasm_bindgen::Clamped(&buffer);
+    } else {
+        // copy out our actual data and ignore the padding that has been added to the gpu buffer
+        let bd = BufferDimensions::new(w, h);
+        actual_data.reserve(bd.unpadded_bytes_per_row * h as usize);
+        for i in 0..h {
+            let start_index = (i * bd.padded_bytes_per_row) as usize;
+            let end_index = start_index + bd.unpadded_bytes_per_row;
+            actual_data.extend_from_slice(&buffer[start_index..end_index]);
+        }
+        clamped = wasm_bindgen::Clamped(&actual_data);
+    }
+
+    let image_data =
+        ImageData::new_with_u8_clamped_array_and_sh(clamped, w as u32, h as u32).unwrap();
+    ctx.put_image_data(&image_data, 0.0, 0.0).unwrap();
 }
 
 pub fn get_element(id: &str) -> Element {
@@ -55,12 +76,12 @@ pub fn get_canvas_by_id(id: &str) -> HtmlCanvasElement {
     return element.dyn_into::<HtmlCanvasElement>().unwrap();
 }
 
-pub async fn draw_on_canvas_internal(drawing_bytes: &Vec<u8>, canvas_id: &str) {
+pub async fn draw_on_canvas_internal(bytes: &Vec<u8>, canvas_id: &str) {
     let canvas = get_canvas_by_id(&canvas_id);
-    draw_buffer(&drawing_bytes, &canvas);
+    draw_buffer(&bytes, &canvas);
 }
 
-pub fn calculate_error_from_gpu(error_bytes: Vec<u8>) -> f64 {
+pub fn calculate_error_from_gpu(error_bytes: &Vec<u8>) -> f64 {
     let error_bytes_f32: Vec<f32> = error_bytes
         .chunks_exact(4)
         .map(|c| f32::from_ne_bytes(c.try_into().unwrap()) * 255.0)

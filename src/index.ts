@@ -19,9 +19,10 @@ import {
 } from "./assets/wasm/renderer";
 
 // @ts-ignore // FIXME: Cannot find module but it actually works fine?
-import firefox from "./assets/firefox.jpg";
+// import target_image from "./assets/firefox.jpg";
+import target_image from "./assets/wgpulogo.png";
 
-import {BehaviorSubject, throttleTime} from "rxjs";
+import { BehaviorSubject, throttleTime } from "rxjs";
 import "./reset.css";
 import "./styles.css";
 
@@ -161,7 +162,7 @@ const togglePaused = () => {
 const source_img = document.getElementById("source-img") as HTMLImageElement;
 source_img.crossOrigin = "Anonymous"; // prevent security error
 source_img.onload = (): void => initializeWithNewImage(source_img);
-source_img.src = firefox;
+source_img.src = target_image;
 
 let engine: Engine;
 
@@ -181,10 +182,13 @@ const calculateAspectRatioFit = (
   maxHeight: number
 ): ImageDimensions => {
   const ratio = Math.min(maxWidth / srcWidth, maxHeight / srcHeight);
-  return {
-    width: Math.round(srcWidth * ratio),
-    height: Math.round(srcHeight * ratio),
-  };
+  let width = Math.round(srcWidth * ratio);
+  let height = Math.round(srcHeight * ratio);
+
+  // force even numbers
+  if (width % 2 !== 0) width++;
+  if (height % 2 !== 0) height++;
+  return { width, height };
 };
 
 const initializeWithNewImage = (img: HTMLImageElement) => {
@@ -204,7 +208,7 @@ const initializeWithNewImage = (img: HTMLImageElement) => {
 
       // from now on working with w, h --> original dimensions only readed to read source_bytes correctly
 
-      const ref = document.getElementById("ref-canvas") as HTMLCanvasElement;
+      const ref = document.getElementById("error-canvas") as HTMLCanvasElement;
       const wgpu = document.getElementById("wgpu-canvas") as HTMLCanvasElement;
       img.width = w;
       img.height = h;
@@ -232,18 +236,17 @@ const initEngine = async (dimensions: Dimensions) => {
 const createEngine = async (dimensions: Dimensions): Promise<Engine> => {
   const source_bytes = new Uint8Array(getImageData(source_img, dimensions));
   const best_drawing = JSON.stringify(test);
-  await draw_without_gpu(best_drawing, "ref-canvas");
 
   const stats = document.querySelector("p.size-stats") as HTMLParagraphElement;
-  stats.innerText = `Rendering at: ${MAX_SIZE}x${MAX_SIZE}\nTriangles: ${
-    test?.polygons?.length ?? 0
-  }`;
+  stats.innerText = `Rendering at: ${dimensions.w}x${
+    dimensions.h
+  }\nTriangles: ${test?.polygons?.length ?? 0}`;
 
   // test all black
   // const black = [0, 0, 0, 255];
   // const source_bytes = new Uint8Array(Array(w*h).fill(black).flat());
   const { w, h } = dimensions;
-  return Engine.new(source_bytes, best_drawing, w, h); // pass best_drawing instead of null normally, testing starting from scratch
+  return Engine.new(source_bytes, null, w, h); // pass best_drawing instead of null normally, testing starting from scratch
 };
 
 // called before loadWasm to adjust UI and setup state
@@ -280,20 +283,21 @@ const prepare = () => {
   checkSizes();
 };
 
-const getImageData = (img: HTMLImageElement, settings: Dimensions) => {
-  const { w, h, original_width, original_height } = settings;
-  console.log("getImageData", w, h, original_width, original_height);
+const getImageData = (img: HTMLImageElement, dimensions: Dimensions) => {
+  console.log(dimensions);
+  const { w, h, original_width, original_height } = dimensions;
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
   const context = canvas.getContext("2d");
   context.drawImage(img, 0, 0, original_width, original_height, 0, 0, w, h);
+  console.log(context.getImageData(0, 0, w, h).data); // WTF
   return context.getImageData(0, 0, w, h).data;
 };
 
 const checkSizes = () => {
   const img = document.getElementById("source-img") as HTMLImageElement;
-  const ref = document.getElementById("ref-canvas") as HTMLCanvasElement;
+  const ref = document.getElementById("error-canvas") as HTMLCanvasElement;
   const wgpu = document.getElementById("wgpu-canvas") as HTMLCanvasElement;
   console.log(`img.width = ${img.width}, img.height = ${img.height}`);
   console.log(`ref.width = ${ref.width}, ref.height = ${ref.height}`);

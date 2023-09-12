@@ -52,6 +52,7 @@ pub struct Engine {
     running: bool,
     best_drawing: Drawing,
     best_drawing_bytes: Vec<u8>,
+    error_bytes: Vec<u8>,
     stats: Stats,
 }
 
@@ -298,9 +299,6 @@ impl Engine {
             entry_point: "main",
         });
 
-        // test draw source_bytes to canvas to check if they look the same as source image
-        // draw_on_canvas_internal(&source_bytes, "ref-canvas").await;
-
         let best_drawing: Drawing = match best_drawing.is_falsy() {
             true => Drawing::new_random(),
             false => Drawing::from(best_drawing),
@@ -326,6 +324,7 @@ impl Engine {
             running,
             best_drawing,
             best_drawing_bytes,
+            error_bytes: vec![0; source_bytes.len()],
             stats: Stats {
                 generated: 0,
                 improvements: 0,
@@ -435,9 +434,15 @@ impl Engine {
         self.queue.submit(Some(encoder.finish()))
     }
 
+    // FIXME: would like this to take &mut self so we can:
+    // self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
+    // self.error_bytes = get_bytes(&self.error_output_buffer).await; // prevent having to fetch again later
+    // self.best_drawing.fitness = fitness; // store it after calculating
+    // the problem is if it takes &mut self it's not usable from other functions like post_init, tick etc
     async fn evaluate_drawing(&self, drawing: &Drawing) -> (f64, f64) {
         // step 1 - render pipeline --> draw our triangles to a texture
         self.draw(&drawing).await;
+        // self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await; //
 
         // Step 2 - compute pipeline --> diff drawing texture vs source texture
         self.calculate_error(self.width as u32, self.height as u32)
@@ -445,7 +450,7 @@ impl Engine {
 
         // Step 3 - sum output of compute pipeline // TODO: reduction on GPU
         let error_bytes = get_bytes(&self.error_output_buffer).await;
-        let error = calculate_error_from_gpu(error_bytes);
+        let error = calculate_error_from_gpu(&error_bytes);
         let max_total_error: f64 = MAX_ERROR_PER_PIXEL * self.width as f64 * self.height as f64;
         let mut fitness: f64 = 100.0 * (1.0 - error / max_total_error);
         let penalty = fitness * PER_POINT_MULTIPLIER * drawing.num_points() as f64;
@@ -453,7 +458,7 @@ impl Engine {
         (error, fitness)
     }
 
-    async fn mutate_new_best(&self, mut drawing: Drawing) -> Drawing {
+    async fn mutate_new_best(&mut self, mut drawing: Drawing) -> Drawing {
         let current_best = drawing.fitness;
         let mut c1;
         let mut c2: i32 = 0;
@@ -482,16 +487,19 @@ impl Engine {
     }
 
     pub async fn post_init(&mut self) {
-        // even if it was already set evaluate it again, could be coming in from a different rendering engine
         let (error, fitness) = self.evaluate_drawing(&self.best_drawing).await;
         log::info!("error = {}, fitness = {}", error, fitness);
 
         self.best_drawing.fitness = fitness;
-        self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
+        self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await; // already fetched inside evaluate_drawing, how to avoid this?
+        self.error_bytes = get_bytes(&self.error_output_buffer).await; // already fetched inside evaluate_drawing, how to avoid this?
+
+        info!("{} {}", self.best_drawing_bytes.len(), self.error_bytes.len());
     }
 
     pub async fn display_best_drawing(&self, canvas_id: &str) {
         draw_on_canvas_internal(&self.best_drawing_bytes, &canvas_id).await;
+        draw_on_canvas_internal(&self.error_bytes, "error-canvas").await; // TODO take in as param?
     }
 
     pub async fn loop_n_times(&mut self, n: usize, canvas_id: &str) {
@@ -506,12 +514,6 @@ impl Engine {
             self.best_drawing = self.mutate_new_best(self.best_drawing.clone()).await;
             self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
             log::info!("{} --> fitness = {}", i, self.best_drawing.fitness);
-
-            // also draw non wgpu version on test canvas for comparison
-            // draw_without_gpu(
-            //     JsValue::from_str(&serde_json::to_string(&self.best_drawing).unwrap()), // normally called from JS side
-            //     "ref-canvas",
-            // );
         }
 
         if display_best {
