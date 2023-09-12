@@ -6,6 +6,8 @@ use web_sys::{CanvasRenderingContext2d, Element, HtmlCanvasElement, ImageData};
 
 use rand::Rng;
 
+use crate::model::settings::MAX_ERROR_PER_PIXEL;
+
 pub struct Timer<'a> {
     name: &'a str,
 }
@@ -81,22 +83,33 @@ pub async fn draw_on_canvas_internal(bytes: &Vec<u8>, canvas_id: &str) {
     draw_buffer(&bytes, &canvas);
 }
 
-pub fn calculate_error_from_gpu(error_bytes: &Vec<u8>) -> f64 {
-    let error_bytes_f32: Vec<f32> = error_bytes
+// TODO: double check this logic.
+// we have read the error_buffer straight out of the gpu as raw bytes
+// it was actually f32 values in the -1..1 range (could add abs() and have 0..1)
+// so first we convert each 4 bytes back to f32 then multiply by 255 to scale to -255..255 range
+// each f32 is the error between the drawing bytes and the source bytes (diff)
+pub fn calculate_error_from_gpu(error_buffer: &Vec<u8>) -> (f64, Vec<u8>) {
+    let error_buffer_f32: Vec<f32> = error_buffer
         .chunks_exact(4)
         .map(|c| f32::from_ne_bytes(c.try_into().unwrap()) * 255.0)
         .collect();
 
-    error_bytes_f32
-        .chunks_exact(4)
-        .map(|c| {
-            let re = c[0];
-            let ge = c[1];
-            let be = c[2];
-            // let ae = c[3]; // alpha ignored
-            f64::sqrt(((re * re) + (ge * ge) + (be * be)) as f64)
-        })
-        .sum()
+    let mut error_heatmap: Vec<u8> = Vec::with_capacity(error_buffer_f32.len());
+    let mut error: f64 = 0.0;
+    error_buffer_f32.chunks_exact(4).for_each(|c| {
+        let re = c[0];
+        let ge = c[1];
+        let be = c[2];
+        // let ae = c[3]; // alpha ignored
+
+        let sqrt = f64::sqrt(((re * re) + (ge * ge) + (be * be)) as f64);
+        error += sqrt;
+
+        let err_color = f64::floor(255.0 * (1.0 - sqrt / MAX_ERROR_PER_PIXEL)) as u8;
+        error_heatmap.extend_from_slice(&[255, err_color, err_color, 255]);
+    });
+
+    return (error, error_heatmap);
 }
 
 pub fn check_error_calcs(

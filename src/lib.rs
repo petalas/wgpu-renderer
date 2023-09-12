@@ -439,23 +439,24 @@ impl Engine {
     // self.error_bytes = get_bytes(&self.error_output_buffer).await; // prevent having to fetch again later
     // self.best_drawing.fitness = fitness; // store it after calculating
     // the problem is if it takes &mut self it's not usable from other functions like post_init, tick etc
-    async fn evaluate_drawing(&self, drawing: &Drawing) -> (f64, f64) {
+    async fn evaluate_drawing(&self, drawing: &Drawing) -> (f64, f64, Vec<u8>, Vec<u8>) {
         // step 1 - render pipeline --> draw our triangles to a texture
         self.draw(&drawing).await;
-        // self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await; //
+        let best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await; //
 
         // Step 2 - compute pipeline --> diff drawing texture vs source texture
         self.calculate_error(self.width as u32, self.height as u32)
             .await;
 
-        // Step 3 - sum output of compute pipeline // TODO: reduction on GPU
-        let error_bytes = get_bytes(&self.error_output_buffer).await;
-        let error = calculate_error_from_gpu(&error_bytes);
+        // Step 3 - calculate error and error heatmap (sum output of compute pipeline)
+        // TODO: parallel reduction on GPU, something like https://eximia.co/implementing-parallel-reduction-in-cuda/
+        let error_buffer = get_bytes(&self.error_output_buffer).await;
+        let (error, error_heatmap) = calculate_error_from_gpu(&error_buffer);
         let max_total_error: f64 = MAX_ERROR_PER_PIXEL * self.width as f64 * self.height as f64;
         let mut fitness: f64 = 100.0 * (1.0 - error / max_total_error);
         let penalty = fitness * PER_POINT_MULTIPLIER * drawing.num_points() as f64;
         fitness -= penalty;
-        (error, fitness)
+        (error, fitness, best_drawing_bytes, error_heatmap)
     }
 
     async fn mutate_new_best(&mut self, mut drawing: Drawing) -> Drawing {
@@ -487,39 +488,22 @@ impl Engine {
     }
 
     pub async fn post_init(&mut self) {
-        let (error, fitness) = self.evaluate_drawing(&self.best_drawing).await;
-        log::info!("error = {}, fitness = {}", error, fitness);
+        let (error, fitness, best_drawing_bytes, error_bytes) =
+            self.evaluate_drawing(&self.best_drawing).await;
 
         self.best_drawing.fitness = fitness;
-        self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await; // already fetched inside evaluate_drawing, how to avoid this?
-        self.error_bytes = get_bytes(&self.error_output_buffer).await; // already fetched inside evaluate_drawing, how to avoid this?
-
-        info!("{} {}", self.best_drawing_bytes.len(), self.error_bytes.len());
+        self.best_drawing_bytes = best_drawing_bytes;
+        self.error_bytes = error_bytes;
+        log::info!("post_init done, error = {}, fitness = {}", error, fitness);
     }
 
-    pub async fn display_best_drawing(&self, canvas_id: &str) {
-        draw_on_canvas_internal(&self.best_drawing_bytes, &canvas_id).await;
-        draw_on_canvas_internal(&self.error_bytes, "error-canvas").await; // TODO take in as param?
-    }
+    // pub async fn display_best_drawing(&self, canvas_id: &str) {
+    //     draw_on_canvas_internal(&self.best_drawing_bytes, &canvas_id).await;
+    //     draw_on_canvas_internal(&self.error_bytes, "error-canvas").await; // TODO take in as param?
+    // }
 
-    pub async fn loop_n_times(&mut self, n: usize, canvas_id: &str) {
-        // even if it was already set evaluate it again, could be coming in from a different rendering engine
-        let (error, fitness) = self.evaluate_drawing(&self.best_drawing).await;
-        self.best_drawing.fitness = fitness;
-        log::info!("error = {}, fitness = {}", error, fitness);
-
-        let display_best = canvas_id.len() > 0;
-
-        for i in 0..n {
-            self.best_drawing = self.mutate_new_best(self.best_drawing.clone()).await;
-            self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
-            log::info!("{} --> fitness = {}", i, self.best_drawing.fitness);
-        }
-
-        if display_best {
-            // TODO: don't await here?
-            self.display_best_drawing(&canvas_id).await;
-        }
+    async fn display_to_canvas(&self, bytes: &Vec<u8>, canvas_id: &str) {
+        draw_on_canvas_internal(&bytes, &canvas_id).await;
     }
 
     pub async fn tick(&mut self, max_time_ms: usize, canvas_id: &str) -> JsValue {
@@ -537,15 +521,21 @@ impl Engine {
             let mut clone = self.best_drawing.clone();
             clone.mutate();
             self.stats.generated += 1;
-            clone.fitness = (self.evaluate_drawing(&clone).await).1;
+            let (_error, fitness, best_drawing_bytes, error_heatmap) =
+                self.evaluate_drawing(&clone).await;
+            clone.fitness = fitness;
             if clone.fitness > self.best_drawing.fitness {
-                self.best_drawing = clone;
-                self.best_drawing_bytes = get_bytes(&self.drawing_output_buffer).await;
-                self.stats.improvements += 1;
                 if display_best {
                     // TODO: don't await here?
-                    self.display_best_drawing(&canvas_id).await;
+                    self.display_to_canvas(&best_drawing_bytes, &canvas_id)
+                        .await;
+                    self.display_to_canvas(&error_heatmap, "error-canvas") // TODO: pass in error_canvas_id
+                        .await;
                 }
+
+                self.best_drawing = clone;
+                self.best_drawing_bytes = best_drawing_bytes;
+                self.stats.improvements += 1;
             }
             elapsed += t0.elapsed().as_millis() as usize;
         }

@@ -14,15 +14,14 @@ import test from "./assets/test.json";
 
 import {
   Engine,
-  draw_without_gpu,
-  default as init,
+  default as init
 } from "./assets/wasm/renderer";
 
 // @ts-ignore // FIXME: Cannot find module but it actually works fine?
 // import target_image from "./assets/firefox.jpg";
 import target_image from "./assets/wgpulogo.png";
 
-import { BehaviorSubject, throttleTime } from "rxjs";
+import {BehaviorSubject, throttleTime} from "rxjs";
 import "./reset.css";
 import "./styles.css";
 
@@ -227,7 +226,6 @@ const initEngine = async (dimensions: Dimensions) => {
   await loadWasm();
   engine = await createEngine(dimensions);
   await engine.post_init();
-  await engine.display_best_drawing("wgpu-canvas");
 
   const pauseBtn = document.getElementById("pauseBtn");
   !!engine && pauseBtn.removeAttribute("disabled");
@@ -251,15 +249,6 @@ const createEngine = async (dimensions: Dimensions): Promise<Engine> => {
 
 // called before loadWasm to adjust UI and setup state
 const prepare = () => {
-  const setupLoopBtn = (times: number) => {
-    const loopBtn = document.getElementById("loopBtn");
-    loopBtn.innerText = `Loop ${times} times`;
-    loopBtn.onclick = async () => {
-      loopBtn.setAttribute("disabled", "true");
-      await engine.loop_n_times(times, "wgpu-canvas");
-      loopBtn.removeAttribute("disabled");
-    };
-  };
 
   const setupPauseBtn = () => {
     const pauseBtn = document.getElementById("pauseBtn");
@@ -271,14 +260,6 @@ const prepare = () => {
     };
   };
 
-  const loopTimes = document.getElementById("loopTimes") as HTMLInputElement;
-  loopTimes.onchange = (e) => {
-    const self = e.target as HTMLButtonElement;
-    const val = Number(self.value);
-    setupLoopBtn(val);
-  };
-
-  setupLoopBtn(Number(loopTimes.value));
   setupPauseBtn();
   checkSizes();
 };

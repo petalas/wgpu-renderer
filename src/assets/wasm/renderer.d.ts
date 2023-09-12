@@ -30,17 +30,6 @@ export class Engine {
 */
   post_init(): Promise<void>;
 /**
-* @param {string} canvas_id
-* @returns {Promise<void>}
-*/
-  display_best_drawing(canvas_id: string): Promise<void>;
-/**
-* @param {number} n
-* @param {string} canvas_id
-* @returns {Promise<void>}
-*/
-  loop_n_times(n: number, canvas_id: string): Promise<void>;
-/**
 * @param {number} max_time_ms
 * @param {string} canvas_id
 * @returns {Promise<any>}
@@ -59,8 +48,6 @@ export interface InitOutput {
   readonly engine_toggle_pause: (a: number) => void;
   readonly engine_new: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly engine_post_init: (a: number) => number;
-  readonly engine_display_best_drawing: (a: number, b: number, c: number) => number;
-  readonly engine_loop_n_times: (a: number, b: number, c: number, d: number) => number;
   readonly engine_tick: (a: number, b: number, c: number, d: number) => number;
   readonly engine_reset_stats: (a: number) => void;
   readonly main: () => void;

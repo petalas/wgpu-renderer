@@ -5,8 +5,6 @@ export function __wbg_engine_free(a: number): void;
 export function engine_toggle_pause(a: number): void;
 export function engine_new(a: number, b: number, c: number, d: number, e: number): number;
 export function engine_post_init(a: number): number;
-export function engine_display_best_drawing(a: number, b: number, c: number): number;
-export function engine_loop_n_times(a: number, b: number, c: number, d: number): number;
 export function engine_tick(a: number, b: number, c: number, d: number): number;
 export function engine_reset_stats(a: number): void;
 export function main(): void;
