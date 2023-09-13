@@ -18,7 +18,7 @@ use super::{
 pub struct Drawing {
     pub polygons: Vec<Polygon>,
     pub is_dirty: bool,
-    pub fitness: f64,
+    pub fitness: f32,
 }
 
 impl Drawing {
@@ -27,11 +27,12 @@ impl Drawing {
         if DEBUG_TIMERS {
             _timer = Timer::new("Drawing::draw");
         }
-        let w = f64::from(ctx.canvas().unwrap().width());
-        let h = f64::from(ctx.canvas().unwrap().height());
+
+        let w = ctx.canvas().unwrap().width() as f64;
+        let h = ctx.canvas().unwrap().height() as f64;
 
         ctx.set_fill_style(&JsValue::from("#fff"));
-        ctx.fill_rect(0.0, 0.0, w, h);
+        ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
 
         /* draw the polygons */
         for polygon in &self.polygons {
@@ -62,7 +63,12 @@ impl Drawing {
         if !return_image_data {
             return None;
         }
-        return Some(ctx.get_image_data(0.0, 0.0, w, h).unwrap().data().to_vec());
+        return Some(
+            ctx.get_image_data(0.0, 0.0, w as _, h as _)
+                .unwrap()
+                .data()
+                .to_vec(),
+        );
     }
 
     pub fn num_points(&self) -> usize {
@@ -147,36 +153,66 @@ impl Drawing {
     }
 
     pub fn to_vertices(&self) -> Vec<Vertex> {
-
         // FIXME: hacky workaround --> 2 white triangles as background seems to fix blending issues
         let mut background = vec![
             Vertex {
-                position: [translate_coord(0.0f32), translate_coord(0.0f32), 0.0f32, 1.0f32],
+                position: [
+                    translate_coord(0.0f32),
+                    translate_coord(0.0f32),
+                    0.0f32,
+                    1.0f32,
+                ],
                 color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
             },
             Vertex {
-                position: [translate_coord(1.0f32), translate_coord(0.0f32), 0.0f32, 1.0f32],
+                position: [
+                    translate_coord(1.0f32),
+                    translate_coord(0.0f32),
+                    0.0f32,
+                    1.0f32,
+                ],
                 color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
             },
             Vertex {
-                position: [translate_coord(1.0f32), translate_coord(1.0f32), 0.0f32, 1.0f32],
+                position: [
+                    translate_coord(1.0f32),
+                    translate_coord(1.0f32),
+                    0.0f32,
+                    1.0f32,
+                ],
                 color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
             },
             Vertex {
-                position: [translate_coord(0.0f32), translate_coord(0.0f32), 0.0f32, 1.0f32],
+                position: [
+                    translate_coord(0.0f32),
+                    translate_coord(0.0f32),
+                    0.0f32,
+                    1.0f32,
+                ],
                 color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
             },
             Vertex {
-                position: [translate_coord(0.0f32), translate_coord(1.0f32), 0.0f32, 1.0f32],
+                position: [
+                    translate_coord(0.0f32),
+                    translate_coord(1.0f32),
+                    0.0f32,
+                    1.0f32,
+                ],
                 color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
             },
             Vertex {
-                position: [translate_coord(1.0f32), translate_coord(1.0f32), 0.0f32, 1.0f32],
+                position: [
+                    translate_coord(1.0f32),
+                    translate_coord(1.0f32),
+                    0.0f32,
+                    1.0f32,
+                ],
                 color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
             },
         ];
 
-        let vert: Vec<Vertex> = self.clone()
+        let vert: Vec<Vertex> = self
+            .clone()
             .polygons
             .into_iter()
             .map(|pp| {
@@ -203,7 +239,7 @@ impl Drawing {
             .flatten()
             .collect();
 
-        background.extend( vert);
+        background.extend(vert);
         background
     }
 }
