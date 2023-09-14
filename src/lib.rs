@@ -489,6 +489,21 @@ impl Engine {
         log::info!("post_init done, error = {}, fitness = {}", error, fitness);
     }
 
+    pub async fn test_canvas_vs_wgpu(&mut self) {
+        // native
+        let canvas = util::get_canvas_by_id("native-canvas");
+        let ctx = &util::get_context(&canvas);
+        self.best_drawing.draw(ctx, false);
+
+        // wgpu
+        self.draw(&self.best_drawing).await;
+        self.display_to_canvas(
+            &(get_bytes(&self.drawing_output_buffer).await),
+            "wgpu-canvas",
+        )
+        .await;
+    }
+
     async fn display_to_canvas(&self, bytes: &Vec<u8>, canvas_id: &str) {
         draw_on_canvas_internal(&bytes, &canvas_id).await;
     }

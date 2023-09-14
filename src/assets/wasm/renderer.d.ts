@@ -30,6 +30,10 @@ export class Engine {
 */
   post_init(): Promise<void>;
 /**
+* @returns {Promise<void>}
+*/
+  test_canvas_vs_wgpu(): Promise<void>;
+/**
 * @param {number} max_time_ms
 * @param {string} canvas_id
 * @returns {Promise<any>}
@@ -48,6 +52,7 @@ export interface InitOutput {
   readonly engine_toggle_pause: (a: number) => void;
   readonly engine_new: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly engine_post_init: (a: number) => number;
+  readonly engine_test_canvas_vs_wgpu: (a: number) => number;
   readonly engine_tick: (a: number, b: number, c: number, d: number) => number;
   readonly engine_reset_stats: (a: number) => void;
   readonly main: () => void;

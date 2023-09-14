@@ -7,30 +7,18 @@
   </head>
   <body>
     <div class="wrapper">
-      <h2 id="header">Testing WGPU rendering.</h2>
+      <h2 id="header">WGPU vs CANVAS alpha blending test</h2>
       <p class="size-stats"></p>
       <div class="row">
         <div class="canvas-wrapper">
-          <label for="source-img" class="label">SOURCE</label>
-          <img width="256" height="256" id="source-img"></img>
+          <label for="error-canvas" class="label">CANVAS</label>
+          <canvas width="256" height="256" id="native-canvas"></canvas>
         </div>
         <div class="canvas-wrapper" id="wgpu-canvas-container">
-          <label for="wgpu-canvas" class="label">TRIANGLES</label>
+          <label for="wgpu-canvas" class="label">WGPU</label>
           <canvas width="256" height="256" id="wgpu-canvas"></canvas>
         </div>
-        <div class="canvas-wrapper">
-          <label for="error-canvas" class="label">ERROR</label>
-          <canvas width="256" height="256" id="error-canvas"></canvas>
-        </div>
       </div>
-
-      <!-- controls  -->
-      <div class="row">
-        <button id="pauseBtn" />
-      </div>
-
-      <div id="stats" class="stats column"></div>
-
     </div>
   </body>
 </html>

@@ -1,6 +1,7 @@
 export default {
     polygons: [
-      // gray background
+      // adding 2 white triangles covering the entire plane
+      // this shouldn't be doing anything but it actually fixes the blending issues
       {
         points: [
           {
@@ -17,9 +18,9 @@ export default {
           },
         ],
         color: {
-          r: 127,
-          g: 127,
-          b: 127,
+          r: 255,
+          g: 255,
+          b: 255,
           a: 255,
         },
       },
@@ -39,9 +40,9 @@ export default {
           },
         ],
         color: {
-          r: 127,
-          g: 127,
-          b: 127,
+          r: 255,
+          g: 255,
+          b: 255,
           a: 255,
         },
       },
@@ -67,7 +68,7 @@ export default {
           r: 0,
           g: 0,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -92,7 +93,7 @@ export default {
           r: 255,
           g: 0,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -117,7 +118,7 @@ export default {
           r: 0,
           g: 255,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -142,7 +143,7 @@ export default {
           r: 0,
           g: 0,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -167,7 +168,7 @@ export default {
           r: 255,
           g: 255,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -192,7 +193,7 @@ export default {
           r: 255,
           g: 0,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -217,7 +218,7 @@ export default {
           r: 0,
           g: 255,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -242,7 +243,7 @@ export default {
           r: 255,
           g: 255,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
       ////////////////////////////////////////
@@ -267,7 +268,7 @@ export default {
           r: 0,
           g: 0,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -292,7 +293,7 @@ export default {
           r: 255,
           g: 0,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -317,7 +318,7 @@ export default {
           r: 0,
           g: 255,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -342,7 +343,7 @@ export default {
           r: 0,
           g: 0,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -367,7 +368,7 @@ export default {
           r: 255,
           g: 255,
           b: 0,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -392,7 +393,7 @@ export default {
           r: 255,
           g: 0,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -417,7 +418,7 @@ export default {
           r: 0,
           g: 255,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
   
@@ -441,7 +442,7 @@ export default {
           r: 255,
           g: 255,
           b: 255,
-          a: 127,
+          a: 128,
         },
       },
     ],

@@ -239,8 +239,10 @@ impl Drawing {
             .flatten()
             .collect();
 
-        background.extend(vert);
-        background
+        // background.extend(vert);
+        // background
+
+        return vert;
     }
 }
 
