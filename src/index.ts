@@ -18,8 +18,8 @@ import {
 } from "./assets/wasm/renderer";
 
 // @ts-ignore // FIXME: Cannot find module but it actually works fine?
-// import target_image from "./assets/firefox.jpg";
-import target_image from "./assets/wgpulogo.png";
+import target_image from "./assets/firefox.jpg";
+// import target_image from "./assets/wgpulogo.png";
 
 import {BehaviorSubject, throttleTime} from "rxjs";
 import "./reset.css";
@@ -244,7 +244,7 @@ const createEngine = async (dimensions: Dimensions): Promise<Engine> => {
   // const black = [0, 0, 0, 255];
   // const source_bytes = new Uint8Array(Array(w*h).fill(black).flat());
   const { w, h } = dimensions;
-  return Engine.new(source_bytes, null, w, h); // pass best_drawing instead of null normally, testing starting from scratch
+  return Engine.new(source_bytes, best_drawing, w, h); // pass best_drawing instead of null normally, testing starting from scratch
 };
 
 // called before loadWasm to adjust UI and setup state
@@ -272,7 +272,6 @@ const getImageData = (img: HTMLImageElement, dimensions: Dimensions) => {
   canvas.height = h;
   const context = canvas.getContext("2d");
   context.drawImage(img, 0, 0, original_width, original_height, 0, 0, w, h);
-  console.log(context.getImageData(0, 0, w, h).data); // WTF
   return context.getImageData(0, 0, w, h).data;
 };
 

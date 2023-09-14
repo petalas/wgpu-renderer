@@ -41,15 +41,15 @@ pub fn draw_buffer(buffer: &Vec<u8>, canvas: &HtmlCanvasElement) {
     let w = canvas.width() as usize;
     let h = canvas.height() as usize;
     let ctx = get_context(&canvas);
+    let bd = BufferDimensions::new(w, h);
 
     let clamped: wasm_bindgen::Clamped<&[u8]>;
     let mut actual_data = vec![];
-    if buffer.len() == w * h * 4 {
+    if bd.padded_bytes_per_row == bd.unpadded_bytes_per_row || buffer.len() == w * h * 4 {
         // no padding has been added, can use directly
         clamped = wasm_bindgen::Clamped(&buffer);
     } else {
         // copy out our actual data and ignore the padding that has been added to the gpu buffer
-        let bd = BufferDimensions::new(w, h);
         actual_data.reserve(bd.unpadded_bytes_per_row * h as usize);
         for i in 0..h {
             let start_index = (i * bd.padded_bytes_per_row) as usize;
@@ -83,32 +83,24 @@ pub async fn draw_on_canvas_internal(bytes: &Vec<u8>, canvas_id: &str) {
     draw_buffer(&bytes, &canvas);
 }
 
-// TODO: double check this logic.
-// we have read the error_buffer straight out of the gpu as raw bytes
-// it was actually f32 values in the -1..1 range (could add abs() and have 0..1)
-// so first we convert each 4 bytes back to f32 then multiply by 255 to scale to -255..255 range
-// each f32 is the error between the drawing bytes and the source bytes (diff)
-pub fn calculate_error_from_gpu(error_buffer: &Vec<u8>) -> (f64, Vec<u8>) {
+// we are now calculating sqrt(((re * re) + (ge * ge) + (be * be))) in the gpu
+// error_buffer is raw bytes straight out of the gpu so need to convert chunks of 4 back into f32
+pub fn calculate_error_from_gpu(error_buffer: &Vec<u8>) -> (f32, Vec<u8>) {
     let error_buffer_f32: Vec<f32> = error_buffer
         .chunks_exact(4)
-        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()) * 255.0)
+        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
         .collect();
 
-    let mut error_heatmap: Vec<u8> = Vec::with_capacity(error_buffer_f32.len());
-    let mut error: f64 = 0.0;
-    error_buffer_f32.chunks_exact(4).for_each(|c| {
-        let re = c[0];
-        let ge = c[1];
-        let be = c[2];
-        // let ae = c[3]; // alpha ignored
-
-        let sqrt = f64::sqrt(((re * re) + (ge * ge) + (be * be)) as f64);
+    let mut error_heatmap: Vec<u8> = Vec::with_capacity(error_buffer.len() * 4);
+    let mut error: f32 = 0.0;
+    error_buffer_f32.into_iter().for_each(|sqrt| {
+        // info!("error = {}", sqrt);
         error += sqrt;
-
-        let err_color = f64::floor(255.0 * (1.0 - sqrt / MAX_ERROR_PER_PIXEL)) as u8;
+        let err_color = f32::floor(255.0 * (1.0 - sqrt / MAX_ERROR_PER_PIXEL)) as u8;
         error_heatmap.extend_from_slice(&[255, err_color, err_color, 255]);
     });
 
+    // info!("{:?}", error_heatmap);
     return (error, error_heatmap);
 }
 
@@ -150,11 +142,8 @@ pub fn check_error_calcs(
     log::info!("{} vs {}", error1, error2);
 }
 
-pub fn randomf64_clamped(min: f64, max: f64) -> f64 {
-    return rand::thread_rng().gen_range(min..max);
-}
-
 pub fn randomf32_clamped(min: f32, max: f32) -> f32 {
+    assert!(min < max); // saw a 'cannot sample empty range' error but haven't hit this so far
     return rand::thread_rng().gen_range(min..max);
 }
 
