@@ -21,7 +21,7 @@ import {
 import target_image from "./assets/firefox.jpg";
 // import target_image from "./assets/wgpulogo.png";
 
-import {BehaviorSubject, throttleTime} from "rxjs";
+import { BehaviorSubject, throttleTime } from "rxjs";
 import "./reset.css";
 import "./styles.css";
 
@@ -225,7 +225,9 @@ const initEngine = async (dimensions: Dimensions) => {
   prepare();
   await loadWasm();
   engine = await createEngine(dimensions);
+  console.log("engine initialized");
   await engine.post_init();
+  console.log("engine ready");
 
   const pauseBtn = document.getElementById("pauseBtn");
   !!engine && pauseBtn.removeAttribute("disabled");
@@ -244,12 +246,12 @@ const createEngine = async (dimensions: Dimensions): Promise<Engine> => {
   // const black = [0, 0, 0, 255];
   // const source_bytes = new Uint8Array(Array(w*h).fill(black).flat());
   const { w, h } = dimensions;
+  console.log(`Creating engine with dimensions ${w} x ${h}`);
   return Engine.new(source_bytes, best_drawing, w, h); // pass best_drawing instead of null normally, testing starting from scratch
 };
 
 // called before loadWasm to adjust UI and setup state
 const prepare = () => {
-
   const setupPauseBtn = () => {
     const pauseBtn = document.getElementById("pauseBtn");
     pauseBtn.setAttribute("disabled", "true");
@@ -265,7 +267,7 @@ const prepare = () => {
 };
 
 const getImageData = (img: HTMLImageElement, dimensions: Dimensions) => {
-  console.log(dimensions);
+  console.log("getting image data", dimensions);
   const { w, h, original_width, original_height } = dimensions;
   const canvas = document.createElement("canvas");
   canvas.width = w;

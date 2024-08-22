@@ -1,14 +1,16 @@
-use log::info;
+use log::{info, logger};
 use model::drawing::Drawing;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::borrow::Cow;
 use std::mem::{self};
+use std::ptr::null;
 use texture::Texture;
 use util::BufferDimensions;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_timer::Instant;
-use wgpu::{vertex_attr_array, BlendState};
+use wgpu::{vertex_attr_array, BlendState, Gles3MinorVersion, InstanceFlags};
 
 use crate::model::settings::{MAX_ERROR_PER_PIXEL, PER_POINT_MULTIPLIER};
 use crate::util::{calculate_error_from_gpu, draw_on_canvas_internal, get_bytes, Timer};
@@ -70,26 +72,44 @@ impl Engine {
         let running = false;
 
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let flags: InstanceFlags = InstanceFlags::DEBUG;
+        let gles_minor_version: Gles3MinorVersion = Gles3MinorVersion::Automatic;
+        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
+            flags,
             dx12_shader_compiler: wgpu::Dx12Compiler::default(),
+            gles_minor_version,
         });
+        log::info!("selected engine instance {:?}", instance);
+
+        let adapter_options = &wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: None,
+        };
+        log::info!("adapter options {:?}", adapter_options);
+
+        log::info!("creating adapter...");
         let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .request_adapter(adapter_options)
             .await
-            .unwrap();
+            .expect("Failed to find an appropriate adapter");
+        log::info!("created adapter {:?}", adapter);
 
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_defaults(),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_defaults(),
+                    memory_hints: wgpu::MemoryHints::Performance,
                 },
                 None,
             )
             .await
-            .unwrap();
+            .expect("Failed to create device");
+
+        log::info!("created device");
 
         // It is a WebGPU requirement that ImageCopyBuffer.layout.bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0
         // So we calculate padded_bytes_per_row by rounding unpadded_bytes_per_row
@@ -261,10 +281,12 @@ impl Engine {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[vertex_buffer_layout],
+                compilation_options: Default::default(), // TODO: investigate if there's a better option
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
+                compilation_options: Default::default(), // TODO: investigate if there's a better option
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format,
                     blend: Some(blend_state),
@@ -275,6 +297,7 @@ impl Engine {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let compute_pipeline_layout =
@@ -294,6 +317,8 @@ impl Engine {
             layout: Some(&compute_pipeline_layout),
             module: &compute_module,
             entry_point: "main",
+            compilation_options: Default::default(), // TODO: investigate if there's a better option
+            cache: None,
         });
 
         let best_drawing: Drawing = match best_drawing.is_falsy() {
@@ -360,10 +385,12 @@ impl Engine {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), // WHY DOES DRAWING WHITE TRIANGLES ON TOP OF THIS DO ANYTHING?
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
             rpass.set_pipeline(&self.render_pipeline);
@@ -404,6 +431,7 @@ impl Engine {
 
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("Compute Pass"),
+            timestamp_writes: None,
         });
         cpass.set_pipeline(&self.compute_pipeline);
         cpass.set_bind_group(0, &self.compute_bind_group, &[]);

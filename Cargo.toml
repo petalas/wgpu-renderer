@@ -9,20 +9,20 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-anyhow = "1.0.75"
-bytemuck = { version = "1.14.0", features = ["derive"] }
+anyhow = "1.0.86"
+bytemuck = { version = "1.17.0", features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 futures-intrusive = "0.5.0"
-getrandom = { version = "0.2.10", features = ["js"] }
-image = "0.24.7"
-js-sys = "0.3.64"
-log = "0.4.20"
+getrandom = { version = "0.2.15", features = ["js"] }
+image = "0.25.2"
+js-sys = "0.3.70"
+log = "0.4.22"
 rand = "0.8.5"
-serde = { version = "1.0.188", features = ["derive"] }
-serde_json = "1.0.105"
-wasm-bindgen = "0.2.87"
-wasm-bindgen-futures = "0.4.37"
+serde = { version = "1.0.208", features = ["derive"] }
+serde_json = "1.0.125"
+wasm-bindgen = "0.2.93"
+wasm-bindgen-futures = "0.4.43"
 wasm-timer = "0.2.5"
-web-sys = { version = "0.3.64", features = ["Window", "Document", "Element", "HtmlCanvasElement", "CanvasRenderingContext2d", "console", "ImageData", "OffscreenCanvas", "HtmlImageElement"] }
-wgpu = { version = "0.17.0" }
+web-sys = { version = "0.3.70", features = ["Window", "Document", "Element", "HtmlCanvasElement", "CanvasRenderingContext2d", "console", "ImageData", "OffscreenCanvas", "HtmlImageElement"] }
+wgpu = { version = "22.1.0" }
